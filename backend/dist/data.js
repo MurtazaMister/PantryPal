@@ -66,10 +66,10 @@ exports.demoRecipes = [
     }
 ];
 exports.demoPantry = [
-    { id: "rice", name: "Rice", normalizedName: normalizeName("Rice"), quantity: 4, unit: "cup", category: "Grains", storageLocation: "Pantry" },
-    { id: "lentils", name: "Lentils", normalizedName: normalizeName("Lentils"), quantity: 2, unit: "cup", category: "Protein", storageLocation: "Pantry" },
-    { id: "onion", name: "Onion", normalizedName: normalizeName("Onion"), quantity: 3, unit: "piece", category: "Produce", storageLocation: "Pantry" },
-    { id: "tomato", name: "Tomato", normalizedName: normalizeName("Tomato"), quantity: 4, unit: "piece", category: "Produce", storageLocation: "Fridge", expiryDate: new Date(Date.now() + 2 * 86400000).toISOString() },
-    { id: "spinach", name: "Spinach", normalizedName: normalizeName("Spinach"), quantity: 1, unit: "bunch", category: "Produce", storageLocation: "Fridge", expiryDate: new Date(Date.now() + 86400000).toISOString() },
-    { id: "eggs", name: "Eggs", normalizedName: normalizeName("Eggs"), quantity: 6, unit: "piece", category: "Protein", storageLocation: "Fridge" }
+    { id: "rice", name: "Rice", normalizedName: normalizeName("Rice"), quantity: 4, unit: "cup", purchasedDate: new Date().toISOString() },
+    { id: "lentils", name: "Lentils", normalizedName: normalizeName("Lentils"), quantity: 2, unit: "cup", purchasedDate: new Date().toISOString() },
+    { id: "onion", name: "Onion", normalizedName: normalizeName("Onion"), quantity: 3, unit: "piece", purchasedDate: new Date().toISOString() },
+    { id: "tomato", name: "Tomato", normalizedName: normalizeName("Tomato"), quantity: 4, unit: "piece", purchasedDate: new Date().toISOString(), expiryDate: new Date(Date.now() + 2 * 86400000).toISOString() },
+    { id: "spinach", name: "Spinach", normalizedName: normalizeName("Spinach"), quantity: 1, unit: "bunch", purchasedDate: new Date().toISOString(), expiryDate: new Date(Date.now() + 86400000).toISOString() },
+    { id: "eggs", name: "Eggs", normalizedName: normalizeName("Eggs"), quantity: 6, unit: "piece", purchasedDate: new Date().toISOString() }
 ];

@@ -33,7 +33,8 @@ export function toIsoDateOnly(value: Date | string) {
 
 export function dateOnlyToIso(value: string) {
   const [year, month, day] = value.split("-").map(Number);
-  const next = new Date(year, (month ?? 1) - 1, day ?? 1);
+  // Use noon UTC to avoid date-shift artifacts when converting back to local date-only text.
+  const next = new Date(Date.UTC(year, (month ?? 1) - 1, day ?? 1, 12, 0, 0));
   return next.toISOString();
 }
 

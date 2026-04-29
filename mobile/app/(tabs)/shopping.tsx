@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { Modal, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { Alert, Modal, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { EmptyState } from "../../src/components/EmptyState";
 import { Screen } from "../../src/components/Screen";
 import { SectionCard } from "../../src/components/SectionCard";
@@ -19,6 +20,7 @@ export default function ShoppingScreen() {
   const markShoppingBought = useAppStore((state) => state.markShoppingBought);
   const fetchSuggestions = useAppStore((state) => state.fetchSuggestions);
   const clearSuggestions = useAppStore((state) => state.clearSuggestions);
+  const deleteSuggestionHistoryItem = useAppStore((state) => state.deleteSuggestionHistoryItem);
   const saveCustomUnit = useAppStore((state) => state.saveCustomUnit);
 
   const [name, setName] = useState("");
@@ -123,10 +125,23 @@ export default function ShoppingScreen() {
         {suggestionResults.length ? (
           <View style={styles.suggestionsBox}>
             {suggestionResults.slice(0, 3).map((entry) => (
-              <Pressable key={entry.normalizedName} style={styles.suggestionRow} onPress={() => applySuggestion(entry)}>
-                <Text style={styles.suggestionTitle}>{entry.name}</Text>
-                <Text style={styles.suggestionMeta}>{entry.unit ?? "piece"}</Text>
-              </Pressable>
+              <View key={entry.normalizedName} style={styles.suggestionRow}>
+                <Pressable style={{ flex: 1 }} onPress={() => applySuggestion(entry)}>
+                  <Text style={styles.suggestionTitle}>{entry.name}</Text>
+                  <Text style={styles.suggestionMeta}>{entry.unit ?? "piece"}</Text>
+                </Pressable>
+                <Pressable
+                  onPress={async () => {
+                    const result = await deleteSuggestionHistoryItem(entry.normalizedName);
+                    if (!result.ok && result.blocked) {
+                      Alert.alert("Cannot delete", result.reason ?? "Item is present in pantry and cannot be deleted.");
+                    }
+                  }}
+                  style={styles.deleteSuggestion}
+                >
+                  <Ionicons name="trash-outline" size={16} color="#dc2626" />
+                </Pressable>
+              </View>
             ))}
           </View>
         ) : null}
@@ -201,7 +216,19 @@ export default function ShoppingScreen() {
                 <Pressable style={[styles.smallButton, styles.edit]} onPress={() => startEdit(item.id)}>
                   <Text style={styles.editText}>Edit</Text>
                 </Pressable>
-                <Pressable style={[styles.smallButton, styles.ghost]} onPress={() => deleteShoppingItem(item.id)}>
+                <Pressable
+                  style={[styles.smallButton, styles.ghost]}
+                  onPress={() =>
+                    Alert.alert(
+                      "Delete item",
+                      `Delete "${item.name}" from your shopping list?`,
+                      [
+                        { text: "Cancel", style: "cancel" },
+                        { text: "Delete", style: "destructive", onPress: () => deleteShoppingItem(item.id) },
+                      ],
+                    )
+                  }
+                >
                   <Text style={styles.ghostText}>Delete</Text>
                 </Pressable>
               </View>
@@ -296,10 +323,16 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   suggestionRow: {
+    flexDirection: "row",
+    alignItems: "center",
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderBottomWidth: 1,
     borderBottomColor: "#eff4ec",
+  },
+  deleteSuggestion: {
+    padding: 6,
+    marginLeft: 8,
   },
   suggestionTitle: {
     color: "#163627",

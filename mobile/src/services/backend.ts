@@ -48,6 +48,13 @@ export async function fetchItemSuggestions(params: { userId: string; q: string; 
   return request<{ suggestions: ItemSuggestion[] }>(`/items/suggestions?${search.toString()}`);
 }
 
+export async function deleteSuggestionHistoryItem(params: { userId: string; normalizedName: string }) {
+  return request<{ ok: boolean; removed: number }>("/items/suggestions", {
+    method: "DELETE",
+    body: JSON.stringify(params),
+  });
+}
+
 export async function saveCustomUnit(userId: string, unitName: string) {
   return request<{ allUnits: string[] }>("/units/custom", {
     method: "POST",

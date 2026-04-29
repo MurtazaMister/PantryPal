@@ -7,6 +7,7 @@ import { initRedis, loadUserMemory, saveUserMemory } from "./memory";
 import {
   authGuestSchema,
   customUnitSchema,
+  deleteSuggestionSchema,
   deductionEstimateSchema,
   estimateExpirySchema,
   itemSuggestionsQuerySchema,
@@ -27,6 +28,23 @@ type SuggestionEntry = {
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+let devReqCounter = 0;
+app.use((request, response, next) => {
+  const startedAt = Date.now();
+  const requestId = `req_${++devReqCounter}`;
+  const userId =
+    (typeof request.body?.userId === "string" && request.body.userId) ||
+    (typeof request.query?.userId === "string" && request.query.userId) ||
+    "unknown";
+  (request as express.Request & { requestId?: string }).requestId = requestId;
+  console.log(`dev:req id=${requestId} method=${request.method} path=${request.path} userId=${userId}`);
+  response.on("finish", () => {
+    const durationMs = Date.now() - startedAt;
+    console.log(`dev:res id=${requestId} status=${response.statusCode} durationMs=${durationMs}`);
+  });
+  next();
+});
 
 initRedis(process.env.REDIS_URL);
 saveUserMemory("guest_demo", demoMemorySummary).catch(() => undefined);
@@ -137,6 +155,7 @@ async function loadCustomUnitsFromDb(userId: string) {
 app.get("/health", (_request, response) => {
   response.json({ ok: true, service: "pantrypal-backend" });
 });
+console.log("dev:server-ready");
 
 app.post("/auth/guest", async (request, response) => {
   const parsed = authGuestSchema.safeParse(request.body);
@@ -243,6 +262,21 @@ app.get("/items/suggestions", async (request, response) => {
   });
 });
 
+app.delete("/items/suggestions", async (request, response) => {
+  const parsed = deleteSuggestionSchema.safeParse(request.body);
+  if (!parsed.success) {
+    response.status(400).json({ error: parsed.error.flatten() });
+    return;
+  }
+
+  const { userId, normalizedName } = parsed.data;
+  const existing = userHistory.get(userId) ?? [];
+  const next = existing.filter((entry) => entry.normalizedName !== normalizedName);
+  userHistory.set(userId, next);
+  console.log(`dev:suggestions deleted userId=${userId} normalizedName=${normalizedName} removed=${existing.length - next.length}`);
+  response.json({ ok: true, removed: existing.length - next.length });
+});
+
 app.post("/units/custom", async (request, response) => {
   const parsed = customUnitSchema.safeParse(request.body);
   if (!parsed.success) {
@@ -284,6 +318,9 @@ app.post("/ai/recipe-query", async (request, response) => {
   }
 
   const memory = (await loadUserMemory(parsed.data.userId)) ?? demoMemorySummary;
+  console.log(
+    `dev:ai recipe-query userId=${parsed.data.userId} pantryCount=${parsed.data.pantry.length} promptLen=${parsed.data.prompt.length}`,
+  );
   const aiSummary = await enrichPromptWithOpenAI({
     apiKey: process.env.OPENAI_API_KEY,
     model: process.env.OPENAI_MODEL ?? "gpt-4.1-mini",
@@ -323,6 +360,9 @@ app.post("/ai/deduction-estimate", (request, response) => {
     return;
   }
 
+  console.log(
+    `dev:ai deduction-estimate userId=${parsed.data.userId} servings=${parsed.data.servings} recipeId=${parsed.data.recipeId ?? "none"} hasDescription=${Boolean(parsed.data.description)}`,
+  );
   response.json(
     buildDeductionEstimate({
       pantry: parsed.data.pantry,
@@ -342,6 +382,9 @@ app.post("/ai/estimate-expiry", async (request, response) => {
   }
 
   const { itemName, unit, purchasedDate } = parsed.data;
+  console.log(
+    `dev:ai estimate-expiry userId=${parsed.data.userId} item=${itemName} unit=${unit} purchasedDate=${purchasedDate}`,
+  );
   const modelEstimate = await estimateExpiryWithOpenAI({
     apiKey: process.env.OPENAI_API_KEY,
     model: process.env.OPENAI_MODEL ?? "gpt-4.1-mini",
@@ -351,6 +394,15 @@ app.post("/ai/estimate-expiry", async (request, response) => {
   });
 
   const shelfLifeDays = modelEstimate?.shelfLifeDays ?? heuristicShelfLifeDays(itemName);
+  if (modelEstimate) {
+    console.log(
+      `dev:ai estimate-expiry model-success item=${itemName} shelfLifeDays=${modelEstimate.shelfLifeDays} confidence=${modelEstimate.confidence}`,
+    );
+  } else {
+    console.log(
+      `dev:ai estimate-expiry fallback-heuristic item=${itemName} shelfLifeDays=${shelfLifeDays}`,
+    );
+  }
   const confidence = modelEstimate?.confidence ?? 0.55;
   const reason = modelEstimate?.reason ?? "Estimated from common pantry shelf-life defaults.";
   const purchased = new Date(purchasedDate);
@@ -377,6 +429,29 @@ app.post("/memory/refresh", async (request, response) => {
   await saveUserMemory(parsed.data.userId, parsed.data.payload);
   response.json({ ok: true });
 });
+
+app.use(
+  (
+    error: unknown,
+    request: express.Request & { requestId?: string },
+    response: express.Response,
+    _next: express.NextFunction,
+  ) => {
+    const userId =
+      (typeof request.body?.userId === "string" && request.body.userId) ||
+      (typeof request.query?.userId === "string" && request.query.userId) ||
+      "unknown";
+    const message = error instanceof Error ? error.message : "Unknown error";
+    const stack = error instanceof Error ? error.stack : undefined;
+    console.log(
+      `dev:error id=${request.requestId ?? "unknown"} path=${request.path} userId=${userId} message=${message}`,
+    );
+    if (stack) {
+      console.log(`dev:error-stack ${stack}`);
+    }
+    response.status(500).json({ error: "Internal server error" });
+  },
+);
 
 const port = Number(process.env.PORT ?? 4000);
 app.listen(port, () => {

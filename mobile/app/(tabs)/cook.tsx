@@ -1,20 +1,12 @@
 import { router } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { EmptyState } from "../../src/components/EmptyState";
 import { RecipeCard } from "../../src/components/RecipeCard";
 import { Screen } from "../../src/components/Screen";
 import { SectionCard } from "../../src/components/SectionCard";
 import { useAppStore } from "../../src/store/useAppStore";
-import type { RecommendationFilters } from "../../src/types";
-
-const defaultFilters: RecommendationFilters = {
-  availability: "prioritize-expiring",
-  mealType: "dinner",
-  maxMinutes: 30,
-  cuisine: "Indian",
-  equipment: "stove",
-};
+import type { MealType, RecommendationFilters } from "../../src/types";
 
 const TIME_OPTIONS: Array<{ label: string; value: 15 | 30 | 60 }> = [
   { label: "Under 15 min", value: 15 },
@@ -31,38 +23,69 @@ const AVAILABILITY_OPTIONS: Array<{
   { label: "Prioritize expiring", value: "prioritize-expiring" },
 ];
 
+type CookUiFilters = {
+  mealType?: MealType;
+  maxMinutes?: 15 | 30 | 60;
+  availability?: RecommendationFilters["availability"];
+};
+
 export default function CookScreen() {
-  const selectedMealType = useAppStore((state) => state.selectedMealType);
   const setSelectedMealType = useAppStore((state) => state.setSelectedMealType);
   const generateRecommendations = useAppStore((state) => state.generateRecommendations);
   const latestRecommendations = useAppStore((state) => state.latestRecommendations);
   const memorySummary = useAppStore((state) => state.memorySummary);
 
-  const [prompt, setPrompt] = useState("Indian dinner for 3 people");
-  const [filters, setFilters] = useState<RecommendationFilters>({
-    ...defaultFilters,
-    mealType: selectedMealType,
-  });
+  const [prompt, setPrompt] = useState("");
+  const [filters, setFilters] = useState<CookUiFilters>({});
 
-  const safeFilters = useMemo(
-    () => ({ ...filters, mealType: selectedMealType }),
-    [filters, selectedMealType],
+  const hasAnyFilters = useMemo(
+    () => Boolean(filters.mealType || filters.maxMinutes || filters.availability),
+    [filters],
   );
 
-  useEffect(() => {
-    generateRecommendations(safeFilters, prompt);
-  }, []);
-
-  function applyFilters(next: RecommendationFilters) {
+  function applyFilters(next: CookUiFilters) {
     setFilters(next);
-    generateRecommendations(next, prompt);
+  }
+
+  function toggleMealType(mealType: MealType) {
+    applyFilters({
+      ...filters,
+      mealType: filters.mealType === mealType ? undefined : mealType,
+    });
+  }
+
+  function toggleTime(value: 15 | 30 | 60) {
+    applyFilters({
+      ...filters,
+      maxMinutes: filters.maxMinutes === value ? undefined : value,
+    });
+  }
+
+  function toggleAvailability(value: RecommendationFilters["availability"]) {
+    applyFilters({
+      ...filters,
+      availability: filters.availability === value ? undefined : value,
+    });
+  }
+
+  function runGenerate() {
+    const mealType = filters.mealType ?? "dinner";
+    setSelectedMealType(mealType);
+    generateRecommendations(
+      {
+        mealType,
+        availability: filters.availability ?? "prioritize-expiring",
+        maxMinutes: filters.maxMinutes,
+      },
+      prompt,
+    );
   }
 
   return (
     <Screen>
       <SectionCard
         title="Cook from your pantry"
-        subtitle="Filters are selectable and recommendations always use your latest prompt + filters."
+        subtitle="No defaults selected. Tap again on any selected filter to clear it."
       >
         <TextInput
           style={styles.input}
@@ -75,13 +98,10 @@ export default function CookScreen() {
           {(["breakfast", "lunch", "dinner"] as const).map((mealType) => (
             <Pressable
               key={mealType}
-              style={[styles.filterChip, selectedMealType === mealType && styles.filterChipActive]}
-              onPress={() => {
-                setSelectedMealType(mealType);
-                applyFilters({ ...safeFilters, mealType });
-              }}
+              style={[styles.filterChip, filters.mealType === mealType && styles.filterChipActive]}
+              onPress={() => toggleMealType(mealType)}
             >
-              <Text style={[styles.filterLabel, selectedMealType === mealType && styles.filterLabelActive]}>
+              <Text style={[styles.filterLabel, filters.mealType === mealType && styles.filterLabelActive]}>
                 {mealType}
               </Text>
             </Pressable>
@@ -93,10 +113,10 @@ export default function CookScreen() {
           {TIME_OPTIONS.map((entry) => (
             <Pressable
               key={entry.value}
-              style={[styles.control, safeFilters.maxMinutes === entry.value && styles.controlActive]}
-              onPress={() => applyFilters({ ...safeFilters, maxMinutes: entry.value })}
+              style={[styles.control, filters.maxMinutes === entry.value && styles.controlActive]}
+              onPress={() => toggleTime(entry.value)}
             >
-              <Text style={[styles.controlText, safeFilters.maxMinutes === entry.value && styles.controlTextActive]}>
+              <Text style={[styles.controlText, filters.maxMinutes === entry.value && styles.controlTextActive]}>
                 {entry.label}
               </Text>
             </Pressable>
@@ -108,17 +128,17 @@ export default function CookScreen() {
           {AVAILABILITY_OPTIONS.map((entry) => (
             <Pressable
               key={entry.value}
-              style={[styles.control, safeFilters.availability === entry.value && styles.controlActive]}
-              onPress={() => applyFilters({ ...safeFilters, availability: entry.value })}
+              style={[styles.control, filters.availability === entry.value && styles.controlActive]}
+              onPress={() => toggleAvailability(entry.value)}
             >
-              <Text style={[styles.controlText, safeFilters.availability === entry.value && styles.controlTextActive]}>
+              <Text style={[styles.controlText, filters.availability === entry.value && styles.controlTextActive]}>
                 {entry.label}
               </Text>
             </Pressable>
           ))}
         </View>
 
-        <Pressable style={styles.button} onPress={() => generateRecommendations(safeFilters, prompt)}>
+        <Pressable style={styles.button} onPress={runGenerate}>
           <Text style={styles.buttonText}>Generate recipes</Text>
         </Pressable>
 
@@ -134,7 +154,10 @@ export default function CookScreen() {
             <RecipeCard key={recipe.id} recipe={recipe} onPress={() => router.push(`/recipe/${recipe.id}`)} />
           ))
         ) : (
-          <EmptyState title="No matches yet" body="Try wider filters or add more pantry ingredients." />
+          <EmptyState
+            title={hasAnyFilters ? "No matches yet" : "Choose filters and generate"}
+            body={hasAnyFilters ? "Try wider filters or add more pantry ingredients." : "Pick optional filters, then tap Generate recipes."}
+          />
         )}
       </SectionCard>
     </Screen>

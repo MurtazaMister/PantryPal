@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.customUnitSchema = exports.itemSuggestionsQuerySchema = exports.mergeGuestSchema = exports.authGuestSchema = exports.memoryRefreshSchema = exports.deductionEstimateSchema = exports.recipeQuerySchema = exports.pantryItemSchema = void 0;
+exports.customUnitSchema = exports.deleteSuggestionSchema = exports.itemSuggestionsQuerySchema = exports.mergeGuestSchema = exports.authGuestSchema = exports.memoryRefreshSchema = exports.deductionEstimateSchema = exports.recipeQuerySchema = exports.estimateExpirySchema = exports.pantryItemSchema = void 0;
 const zod_1 = require("zod");
 exports.pantryItemSchema = zod_1.z.object({
     id: zod_1.z.string(),
@@ -8,9 +8,14 @@ exports.pantryItemSchema = zod_1.z.object({
     normalizedName: zod_1.z.string(),
     quantity: zod_1.z.number(),
     unit: zod_1.z.string(),
-    category: zod_1.z.string(),
-    storageLocation: zod_1.z.string(),
+    purchasedDate: zod_1.z.string().optional(),
     expiryDate: zod_1.z.string().optional(),
+});
+exports.estimateExpirySchema = zod_1.z.object({
+    userId: zod_1.z.string().default("guest_demo"),
+    itemName: zod_1.z.string().min(1),
+    unit: zod_1.z.string().min(1),
+    purchasedDate: zod_1.z.string(),
 });
 exports.recipeQuerySchema = zod_1.z.object({
     userId: zod_1.z.string().default("guest_demo"),
@@ -57,6 +62,10 @@ exports.itemSuggestionsQuerySchema = zod_1.z.object({
     userId: zod_1.z.string().min(3),
     q: zod_1.z.string().min(1),
     limit: zod_1.z.coerce.number().int().min(1).max(10).default(3),
+});
+exports.deleteSuggestionSchema = zod_1.z.object({
+    userId: zod_1.z.string().min(3),
+    normalizedName: zod_1.z.string().min(1),
 });
 exports.customUnitSchema = zod_1.z.object({
     userId: zod_1.z.string().min(3),

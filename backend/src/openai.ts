@@ -46,6 +46,7 @@ export async function enrichPromptWithOpenAI(params: {
   });
 
   if (!response.ok) {
+    console.log(`dev:ai estimate-expiry openai-http-fail status=${response.status}`);
     return null;
   }
 
@@ -112,6 +113,7 @@ export async function estimateExpiryWithOpenAI(params: {
   };
 
   if (!data.output_text) {
+    console.log("dev:ai estimate-expiry empty-output-text");
     return null;
   }
 
@@ -122,6 +124,7 @@ export async function estimateExpiryWithOpenAI(params: {
       reason?: string;
     };
     if (!parsed.shelfLifeDays || parsed.shelfLifeDays <= 0) {
+      console.log("dev:ai estimate-expiry invalid-shelfLifeDays");
       return null;
     }
     return {
@@ -129,7 +132,9 @@ export async function estimateExpiryWithOpenAI(params: {
       confidence: typeof parsed.confidence === "number" ? Math.max(0, Math.min(1, parsed.confidence)) : 0.5,
       reason: parsed.reason ?? "Estimated by model.",
     };
-  } catch {
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "parse error";
+    console.log(`dev:ai estimate-expiry parse-fail message=${message}`);
     return null;
   }
 }

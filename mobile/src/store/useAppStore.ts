@@ -1,7 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
-import { createId, normalizeName, todayIso } from "../lib";
+import { createId, normalizeName, todayIso, toIsoDateOnly } from "../lib";
 import {
   defaultProfile,
   defaultReminderPreferences,
@@ -24,6 +24,7 @@ import {
   rankRecipes,
 } from "../services/recommendations";
 import {
+  deleteSuggestionHistoryItem as deleteSuggestionHistoryItemApi,
   estimateExpiry,
   fetchCustomUnits,
   fetchItemSuggestions,
@@ -112,6 +113,7 @@ type AppState = {
   updateReminderPreferences: (patch: Partial<ReminderPreferences>) => void;
   saveCustomUnit: (unitName: string) => Promise<void>;
   fetchSuggestions: (query: string) => Promise<ItemSuggestion[]>;
+  deleteSuggestionHistoryItem: (normalizedName: string) => Promise<{ ok: boolean; blocked?: boolean; reason?: string }>;
   clearSuggestions: () => void;
   upgradeWithGoogle: (mode: UpgradeMergeMode) => Promise<{ ok: boolean; message: string }>;
 };
@@ -120,6 +122,15 @@ const defaultFilters: RecommendationFilters = {
   availability: "prioritize-expiring",
   mealType: "dinner",
 };
+
+function localFallbackExpiry(purchasedDate: string) {
+  const purchased = new Date(purchasedDate);
+  return new Date(
+    purchased.getFullYear(),
+    purchased.getMonth(),
+    purchased.getDate() + 10,
+  ).toISOString();
+}
 
 function ensureCanonicalItemName(name: string, matches: ItemSuggestion[]) {
   const normalized = normalizeName(name);
@@ -303,6 +314,7 @@ export const useAppStore = create<AppState>()(
         if (!item) {
           return;
         }
+        console.log(`dev:bought-start item=${item.name} id=${id}`);
 
         const purchasedDate = options?.purchasedDate ?? todayIso();
         const userId = state.session.id || state.guestUserId || "guest_demo";
@@ -315,25 +327,56 @@ export const useAppStore = create<AppState>()(
             unit: item.unit,
             purchasedDate,
           }).catch(() => null);
-          approxExpiryDate = estimate?.approxExpiryDate;
+          if (estimate?.approxExpiryDate) {
+            approxExpiryDate = estimate.approxExpiryDate;
+            console.log(`dev:bought-estimate-success item=${item.name} userId=${userId}`);
+          } else {
+            approxExpiryDate = localFallbackExpiry(purchasedDate);
+            console.log(`dev:bought-estimate-fallback item=${item.name} userId=${userId}`);
+          }
         }
 
         set((prev) => {
-          const pantryItems = recalcLowStock([
-            {
-              id: createId("pantry"),
-              name: item.name,
-              normalizedName: item.normalizedName,
-              quantity: item.quantity,
-              unit: item.unit,
-              purchasedDate,
-              expiryDate: approxExpiryDate,
-              approxExpiryDate,
-              lowStockThreshold: 1,
-              isLowStock: false,
-            },
-            ...prev.pantryItems,
-          ]);
+          const purchasedDateKey = toIsoDateOnly(purchasedDate);
+          const existingIndex = prev.pantryItems.findIndex(
+            (entry) =>
+              entry.normalizedName === item.normalizedName &&
+              entry.unit === item.unit &&
+              toIsoDateOnly(entry.purchasedDate) === purchasedDateKey,
+          );
+
+          const pantryItems =
+            existingIndex >= 0
+              ? recalcLowStock(
+                  prev.pantryItems.map((entry, index) =>
+                    index === existingIndex
+                      ? {
+                          ...entry,
+                          quantity: entry.quantity + item.quantity,
+                          expiryDate: approxExpiryDate ?? entry.expiryDate,
+                          approxExpiryDate: approxExpiryDate ?? entry.approxExpiryDate,
+                        }
+                      : entry,
+                  ),
+                )
+              : recalcLowStock([
+                  {
+                    id: createId("pantry"),
+                    name: item.name,
+                    normalizedName: item.normalizedName,
+                    quantity: item.quantity,
+                    unit: item.unit,
+                    purchasedDate,
+                    expiryDate: approxExpiryDate,
+                    approxExpiryDate,
+                    lowStockThreshold: 1,
+                    isLowStock: false,
+                  },
+                  ...prev.pantryItems,
+                ]);
+          console.log(
+            `dev:bought-${existingIndex >= 0 ? "merge" : "create"} item=${item.name} purchasedDate=${purchasedDateKey}`,
+          );
 
           const next = {
             ...prev,
@@ -366,7 +409,7 @@ export const useAppStore = create<AppState>()(
           purchasedDate,
         }).catch(() => null);
 
-        const approxExpiryDate = input.expiryDate ?? estimate?.approxExpiryDate;
+        const approxExpiryDate = input.expiryDate ?? estimate?.approxExpiryDate ?? localFallbackExpiry(purchasedDate);
         set((prev) => {
           const next = {
             ...prev,
@@ -414,7 +457,10 @@ export const useAppStore = create<AppState>()(
             unit: nextUnit,
             purchasedDate: nextPurchasedDate,
           }).catch(() => null);
-          estimateDate = estimate?.approxExpiryDate;
+          estimateDate = estimate?.approxExpiryDate ?? localFallbackExpiry(nextPurchasedDate);
+          console.log(
+            `dev:client update-pantry estimate ${estimate?.approxExpiryDate ? "success" : "fallback"} item=${nextName} userId=${userId}`,
+          );
         }
 
         set((prev) => {
@@ -721,6 +767,27 @@ export const useAppStore = create<AppState>()(
         return merged.slice(0, 3);
       },
       clearSuggestions: () => set({ suggestionResults: [] }),
+      deleteSuggestionHistoryItem: async (normalizedName) => {
+        const state = get();
+        const hasInPantry = state.pantryItems.some(
+          (item) => item.normalizedName === normalizedName && item.quantity > 0,
+        );
+        if (hasInPantry) {
+          return { ok: false, blocked: true, reason: "Item is present in pantry and cannot be deleted." };
+        }
+
+        const userId = state.session.id || state.guestUserId;
+        if (!userId) {
+          return { ok: false, reason: "User not ready." };
+        }
+
+        await deleteSuggestionHistoryItemApi({ userId, normalizedName }).catch(() => undefined);
+        set((prev) => ({
+          purchaseHistory: prev.purchaseHistory.filter((entry) => entry.normalizedName !== normalizedName),
+          suggestionResults: prev.suggestionResults.filter((entry) => entry.normalizedName !== normalizedName),
+        }));
+        return { ok: true };
+      },
       upgradeWithGoogle: async (mode) => {
         const state = get();
         if (state.session.mode === "authenticated") {

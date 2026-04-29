@@ -69,6 +69,11 @@ export const itemSuggestionsQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(10).default(3),
 });
 
+export const deleteSuggestionSchema = z.object({
+  userId: z.string().min(3),
+  normalizedName: z.string().min(1),
+});
+
 export const customUnitSchema = z.object({
   userId: z.string().min(3),
   unitName: z.string().min(1).max(32),

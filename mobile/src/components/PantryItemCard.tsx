@@ -21,6 +21,7 @@ export function PantryItemCard({
           <Text style={styles.title}>{item.name}</Text>
           <Text style={styles.meta}>{quantityLabel(item.quantity, item.unit)}</Text>
           <Text style={styles.subMeta}>Bought: {toIsoDateOnly(item.purchasedDate)}</Text>
+          <Text style={styles.subMeta}>Expiry: {item.expiryDate ? toIsoDateOnly(item.expiryDate) : "Not set"}</Text>
         </View>
         <View style={styles.actionColumn}>
           {onEdit ? (
