@@ -1,6 +1,7 @@
 import { router } from "expo-router";
 import { useEffect } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { EmptyState } from "../../src/components/EmptyState";
 import { RecipeCard } from "../../src/components/RecipeCard";
 import { Screen } from "../../src/components/Screen";
@@ -12,18 +13,21 @@ export default function HomeScreen() {
   const pantryItems = useAppStore((state) => state.pantryItems);
   const latestRecommendations = useAppStore((state) => state.latestRecommendations);
   const generateRecommendations = useAppStore((state) => state.generateRecommendations);
+  const generatingRecipes = useAppStore((state) => state.generatingRecipes);
+  const isPromptGenerationActive = useAppStore((state) => state.isPromptGenerationActive);
   const memorySummary = useAppStore((state) => state.memorySummary);
   const undoEvent = useAppStore((state) => state.undoEvent);
   const undoLastPantryUpdate = useAppStore((state) => state.undoLastPantryUpdate);
+  const dismissUndoEvent = useAppStore((state) => state.dismissUndoEvent);
 
   const expiring = pantryItems.filter(isExpiringSoon);
   const lowStock = pantryItems.filter((item) => item.isLowStock);
 
   useEffect(() => {
-    if (latestRecommendations.length === 0) {
+    if (!generatingRecipes && !isPromptGenerationActive && latestRecommendations.length === 0) {
       generateRecommendations({ availability: "prioritize-expiring", mealType: "dinner", maxMinutes: 30 }, "");
     }
-  }, [latestRecommendations.length, generateRecommendations]);
+  }, [latestRecommendations.length, generateRecommendations, generatingRecipes, isPromptGenerationActive]);
 
   const topRecipes = latestRecommendations;
 
@@ -43,9 +47,14 @@ export default function HomeScreen() {
       </View>
 
       {undoEvent ? (
-        <Pressable onPress={undoLastPantryUpdate} style={styles.undo}>
-          <Text style={styles.undoText}>{undoEvent.label}</Text>
-        </Pressable>
+        <View style={styles.undo}>
+          <Pressable onPress={undoLastPantryUpdate} style={styles.undoAction}>
+            <Text style={styles.undoText}>{undoEvent.label}</Text>
+          </Pressable>
+          <Pressable onPress={dismissUndoEvent} style={styles.undoDismiss} hitSlop={8}>
+            <Ionicons name="close" size={16} color="#7c5300" />
+          </Pressable>
+        </View>
       ) : null}
 
       <SectionCard title="Kitchen snapshot">
@@ -122,8 +131,24 @@ const styles = StyleSheet.create({
   undo: {
     backgroundColor: "#fef3c7",
     borderRadius: 14,
-    padding: 14,
+    paddingLeft: 14,
+    paddingVertical: 10,
+    paddingRight: 8,
     marginBottom: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  undoAction: {
+    flex: 1,
+    paddingVertical: 4,
+  },
+  undoDismiss: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
   },
   undoText: {
     color: "#7c5300",

@@ -10,10 +10,17 @@ function isExpiringSoon(item) {
 }
 function parsePrompt(prompt) {
     const lower = prompt.toLowerCase();
+    const mealType = ["breakfast", "lunch", "dinner", "snack"].find((entry) => lower.includes(entry));
+    const explicitUnder15 = lower.includes("under 15") || lower.includes("15 min");
+    const explicitUnder30 = lower.includes("under 30") || lower.includes("30 min");
+    const quick = lower.includes("quick") || lower.includes("easy") || lower.includes("fast");
+    const promptMaxMinutes = explicitUnder15 ? 15 : explicitUnder30 ? 30 : quick ? 15 : undefined;
     return {
         highProtein: lower.includes("high protein"),
         noOven: lower.includes("no oven"),
         cuisine: ["indian", "chinese", "french", "american", "mexican", "italian", "japanese"].find((entry) => lower.includes(entry)),
+        mealType,
+        promptMaxMinutes,
     };
 }
 function title(value) {
@@ -55,6 +62,8 @@ function scoreRecipe(recipe, pantry, filters, promptSignals, memory, mode) {
         if (memory.preferredEquipment.some((equipment) => recipe.equipment.includes(equipment)))
             score += 7;
     }
+    if (promptSignals.mealType && recipe.tags.includes(promptSignals.mealType))
+        score += 12;
     if (promptSignals.cuisine) {
         if (recipe.cuisine.toLowerCase() === promptSignals.cuisine)
             score += 40;
@@ -114,13 +123,16 @@ function scoreRecipe(recipe, pantry, filters, promptSignals, memory, mode) {
         }),
     };
 }
-function uniqueCuisineFallbackRecipes(pantry, cuisine) {
+function uniqueCuisineFallbackRecipes(pantry, cuisine, mealType, maxMinutes) {
     const rice = pantry.find((item) => item.normalizedName.includes("rice"));
     const eggs = pantry.find((item) => item.normalizedName.includes("egg"));
     const tomato = pantry.find((item) => item.normalizedName.includes("tomato"));
     const onion = pantry.find((item) => item.normalizedName.includes("onion"));
     const spinach = pantry.find((item) => item.normalizedName.includes("spinach"));
     const cuisineTitle = title(cuisine);
+    const flour = pantry.find((item) => item.normalizedName.includes("flour"));
+    const milk = pantry.find((item) => item.normalizedName.includes("milk"));
+    const defaultTime = maxMinutes ?? 20;
     const commonPantry = pantry.slice(0, 4).map((item) => ({
         name: item.name,
         normalizedName: item.normalizedName,
@@ -128,12 +140,65 @@ function uniqueCuisineFallbackRecipes(pantry, cuisine) {
         unit: item.unit,
     }));
     const baseIngredients = commonPantry.length ? commonPantry : [{ name: "Rice", normalizedName: "rice", quantity: 1, unit: "cup" }];
+    if (cuisine === "american" && mealType === "breakfast") {
+        const pancakeIngredients = [
+            ...(flour ? [{ name: flour.name, normalizedName: flour.normalizedName, quantity: 1, unit: flour.unit }] : []),
+            ...(milk ? [{ name: milk.name, normalizedName: milk.normalizedName, quantity: 1, unit: milk.unit }] : []),
+            ...(eggs ? [{ name: eggs.name, normalizedName: eggs.normalizedName, quantity: 2, unit: eggs.unit }] : []),
+            ...(tomato ? [{ name: tomato.name, normalizedName: tomato.normalizedName, quantity: 1, unit: tomato.unit }] : []),
+        ];
+        const safePancakeIngredients = pancakeIngredients.length
+            ? pancakeIngredients
+            : [{ name: "Eggs", normalizedName: "eggs", quantity: 2, unit: "piece" }];
+        return [
+            {
+                id: "generated-american-breakfast-1",
+                title: "Pantry Pancakes",
+                cuisine: "American",
+                cookingTimeMinutes: Math.min(12, defaultTime),
+                equipment: ["stove"],
+                servings: 2,
+                tags: ["breakfast", "quick", "ai-fallback"],
+                ingredients: safePancakeIngredients,
+                steps: ["Mix batter from pantry ingredients.", "Cook small pancakes on a hot pan.", "Serve warm."],
+            },
+            {
+                id: "generated-american-breakfast-2",
+                title: "Quick American Scramble",
+                cuisine: "American",
+                cookingTimeMinutes: Math.min(10, defaultTime),
+                equipment: ["stove"],
+                servings: 2,
+                tags: ["breakfast", "quick", "ai-fallback"],
+                ingredients: [
+                    ...(eggs ? [{ name: eggs.name, normalizedName: eggs.normalizedName, quantity: 3, unit: eggs.unit }] : []),
+                    ...(onion ? [{ name: onion.name, normalizedName: onion.normalizedName, quantity: 0.5, unit: onion.unit }] : []),
+                    ...(tomato ? [{ name: tomato.name, normalizedName: tomato.normalizedName, quantity: 1, unit: tomato.unit }] : []),
+                ],
+                steps: ["Saute aromatics.", "Add eggs and scramble until softly set.", "Serve immediately."],
+            },
+            {
+                id: "generated-american-breakfast-3",
+                title: "Savory Breakfast Omelette",
+                cuisine: "American",
+                cookingTimeMinutes: Math.min(14, defaultTime),
+                equipment: ["stove"],
+                servings: 2,
+                tags: ["breakfast", "quick", "ai-fallback"],
+                ingredients: [
+                    ...(eggs ? [{ name: eggs.name, normalizedName: eggs.normalizedName, quantity: 3, unit: eggs.unit }] : []),
+                    ...(spinach ? [{ name: spinach.name, normalizedName: spinach.normalizedName, quantity: 0.5, unit: spinach.unit }] : []),
+                ],
+                steps: ["Whisk eggs.", "Cook filling briefly.", "Fold omelette and serve."],
+            },
+        ];
+    }
     const variants = [
         {
             id: `generated-${cuisine}-1`,
             title: `${cuisineTitle} Pantry Bowl`,
             cuisine: cuisineTitle,
-            cookingTimeMinutes: 25,
+            cookingTimeMinutes: Math.min(25, defaultTime),
             equipment: ["stove"],
             servings: 2,
             tags: ["quick", "ai-fallback"],
@@ -144,7 +209,7 @@ function uniqueCuisineFallbackRecipes(pantry, cuisine) {
             id: `generated-${cuisine}-2`,
             title: `${cuisineTitle} Weeknight Skillet`,
             cuisine: cuisineTitle,
-            cookingTimeMinutes: 20,
+            cookingTimeMinutes: Math.min(20, defaultTime),
             equipment: ["stove"],
             servings: 2,
             tags: ["quick", "ai-fallback"],
@@ -160,7 +225,7 @@ function uniqueCuisineFallbackRecipes(pantry, cuisine) {
             id: `generated-${cuisine}-3`,
             title: `${cuisineTitle} Pantry Stir`,
             cuisine: cuisineTitle,
-            cookingTimeMinutes: 18,
+            cookingTimeMinutes: Math.min(18, defaultTime),
             equipment: ["stove"],
             servings: 2,
             tags: ["quick", "ai-fallback"],
@@ -182,20 +247,44 @@ function recommendRecipes(input) {
     const mode = input.mode ?? (input.prompt.trim() ? "prompt" : "default");
     const recipes = input.recipes ?? data_1.demoRecipes;
     let candidateRecipes = recipes;
-    if (mode === "prompt" && promptSignals.cuisine) {
-        const strictMatches = recipes.filter((recipe) => recipe.cuisine.toLowerCase() === promptSignals.cuisine);
-        candidateRecipes = strictMatches.length ? strictMatches : uniqueCuisineFallbackRecipes(input.pantry, promptSignals.cuisine);
+    const effectiveMealType = promptSignals.mealType ?? input.filters.mealType;
+    const effectiveMaxMinutes = promptSignals.promptMaxMinutes ?? input.filters.maxMinutes;
+    candidateRecipes = candidateRecipes.filter((recipe) => recipe.tags.includes(effectiveMealType));
+    if (effectiveMaxMinutes) {
+        candidateRecipes = candidateRecipes.filter((recipe) => recipe.cookingTimeMinutes <= effectiveMaxMinutes);
     }
-    return candidateRecipes
-        .map((recipe) => scoreRecipe(recipe, input.pantry, input.filters, promptSignals, input.memory, mode))
+    if (input.filters.equipment) {
+        candidateRecipes = candidateRecipes.filter((recipe) => recipe.equipment.includes(input.filters.equipment));
+    }
+    if (mode === "prompt" && promptSignals.cuisine) {
+        const strictMatches = candidateRecipes.filter((recipe) => recipe.cuisine.toLowerCase() === promptSignals.cuisine);
+        candidateRecipes = strictMatches.length
+            ? strictMatches
+            : uniqueCuisineFallbackRecipes(input.pantry, promptSignals.cuisine, effectiveMealType, effectiveMaxMinutes);
+    }
+    const scored = candidateRecipes
+        .map((recipe) => scoreRecipe(recipe, input.pantry, { ...input.filters, mealType: effectiveMealType, maxMinutes: effectiveMaxMinutes }, promptSignals, input.memory, mode))
         .filter((recipe) => {
         if (mode === "prompt" && promptSignals.cuisine) {
             return recipe.cuisine.toLowerCase() === promptSignals.cuisine;
         }
         return true;
     })
-        .sort((a, b) => b.matchScore - a.matchScore)
-        .slice(0, 3);
+        .filter((recipe) => {
+        if (effectiveMaxMinutes && recipe.cookingTimeMinutes > effectiveMaxMinutes)
+            return false;
+        if (!recipe.tags.includes(effectiveMealType))
+            return false;
+        if (mode === "prompt" && promptSignals.cuisine && recipe.cuisine.toLowerCase() !== promptSignals.cuisine)
+            return false;
+        if (input.filters.availability === "cookable-now" && recipe.missingIngredients.length > 0)
+            return false;
+        if (input.filters.availability === "missing-a-few" && recipe.missingIngredients.length > 2)
+            return false;
+        return true;
+    })
+        .sort((a, b) => b.matchScore - a.matchScore);
+    return scored.slice(0, 3);
 }
 function buildDeductionEstimate(input) {
     const recipe = (input.recipeId ? data_1.demoRecipes.find((entry) => entry.id === input.recipeId) : undefined) ??

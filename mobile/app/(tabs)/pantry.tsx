@@ -151,7 +151,14 @@ export default function PantryScreen() {
   return (
     <Screen>
       <SectionCard title="Pantry inventory" subtitle="Track bought and expiry dates per item.">
-        <TextInput style={styles.input} placeholder="Search pantry" value={query} onChangeText={setQuery} />
+        <View style={styles.searchWrap}>
+          <TextInput style={styles.searchInput} placeholder="Search pantry" value={query} onChangeText={setQuery} />
+          {query.trim().length ? (
+            <Pressable style={styles.searchClear} onPress={() => setQuery("")} hitSlop={8}>
+              <Ionicons name="close" size={16} color="#64748b" />
+            </Pressable>
+          ) : null}
+        </View>
         <Pressable style={styles.addButton} onPress={() => setAddingOpen(true)}>
           <Text style={styles.addButtonText}>Add item</Text>
         </Pressable>
@@ -427,6 +434,27 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 12,
     fontSize: 16,
+  },
+  searchWrap: {
+    position: "relative",
+  },
+  searchInput: {
+    backgroundColor: "#f4f7f1",
+    borderRadius: 12,
+    paddingLeft: 14,
+    paddingRight: 40,
+    paddingVertical: 12,
+    fontSize: 16,
+  },
+  searchClear: {
+    position: "absolute",
+    right: 10,
+    top: 8,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: "center",
+    justifyContent: "center",
   },
   addButton: {
     backgroundColor: "#153a2a",

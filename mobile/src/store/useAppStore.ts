@@ -82,6 +82,7 @@ type AppState = {
   lastPrompt: string;
   lastGeneratedAt?: string;
   generatingRecipes: boolean;
+  isPromptGenerationActive: boolean;
   deductionDrafts: DeductionDraft[];
   recipeChatSession?: RecipeChatSession;
   undoEvent?: UndoEvent;
@@ -127,8 +128,9 @@ type AppState = {
   }) => string;
   createManualDraft: (description: string, servings: number, mealType: MealType) => string;
   updateDeductionDraft: (draftId: string, next: DeductionDraft) => void;
-  applyDeductionDraft: (draftId: string) => Promise<void>;
+  applyDeductionDraft: (draftId: string) => Promise<{ ok: boolean; error?: string }>;
   undoLastPantryUpdate: () => void;
+  dismissUndoEvent: () => void;
   updateReminderPreferences: (patch: Partial<ReminderPreferences>) => void;
   saveCustomUnit: (unitName: string) => Promise<void>;
   fetchSuggestions: (query: string) => Promise<ItemSuggestion[]>;
@@ -229,6 +231,7 @@ export const useAppStore = create<AppState>()(
       lastPrompt: "",
       lastGeneratedAt: undefined,
       generatingRecipes: false,
+      isPromptGenerationActive: false,
       deductionDrafts: [],
       recipeChatSession: undefined,
       undoEvent: undefined,
@@ -741,6 +744,7 @@ export const useAppStore = create<AppState>()(
           latestRecommendations: recommendations,
           lastPrompt: prompt,
           lastGeneratedAt: todayIso(),
+          isPromptGenerationActive: false,
           queryHistory: prompt ? [...state.queryHistory, queryHistoryEntry] : state.queryHistory,
         });
         return recommendations;
@@ -748,7 +752,11 @@ export const useAppStore = create<AppState>()(
       generateRecipesFromPrompt: async (filters, prompt) => {
         const state = get();
         const userId = state.session.id || state.guestUserId || "guest_demo";
-        set({ generatingRecipes: true, latestRecommendations: [] });
+        set({
+          generatingRecipes: true,
+          latestRecommendations: [],
+          isPromptGenerationActive: Boolean(prompt.trim()),
+        });
         try {
           const result = await fetchRecipeQuery({
             userId,
@@ -772,6 +780,7 @@ export const useAppStore = create<AppState>()(
               lastPrompt: prompt,
               lastGeneratedAt: todayIso(),
               generatingRecipes: false,
+              isPromptGenerationActive: false,
             });
             return mapped;
           }
@@ -779,8 +788,18 @@ export const useAppStore = create<AppState>()(
           const message = error instanceof Error ? error.message : "unknown";
           console.log(`dev:client recipe-query fallback reason=${message}`);
         }
+        if (prompt.trim()) {
+          set({
+            latestRecommendations: [],
+            lastPrompt: prompt,
+            lastGeneratedAt: todayIso(),
+            generatingRecipes: false,
+            isPromptGenerationActive: false,
+          });
+          return [];
+        }
         const fallback = get().generateRecommendations(filters, prompt);
-        set({ generatingRecipes: false });
+        set({ generatingRecipes: false, isPromptGenerationActive: false });
         return fallback;
       },
       createRecipeDraft: (recipeId, servings, mealType) => {
@@ -869,7 +888,28 @@ export const useAppStore = create<AppState>()(
         const state = get();
         const draft = state.deductionDrafts.find((entry) => entry.id === draftId);
         if (!draft) {
-          return;
+          return { ok: false, error: "Draft unavailable." };
+        }
+
+        for (const deduction of draft.deductions) {
+          const pantryItem =
+            (deduction.pantryItemId
+              ? state.pantryItems.find((item) => item.id === deduction.pantryItemId)
+              : undefined) ??
+            state.pantryItems.find(
+              (item) =>
+                normalizeName(item.name) === normalizeName(deduction.pantryItemName) &&
+                item.unit === deduction.unit,
+            );
+          if (!pantryItem && deduction.quantity > 0) {
+            return { ok: false, error: `Item "${deduction.pantryItemName}" is not in pantry.` };
+          }
+          if (pantryItem && deduction.quantity > pantryItem.quantity) {
+            return {
+              ok: false,
+              error: `Cannot deduct ${deduction.quantity} ${deduction.unit} from ${deduction.pantryItemName}. Available: ${pantryItem.quantity} ${pantryItem.unit}.`,
+            };
+          }
         }
 
         const snapshot = state.pantryItems.map((item) => ({ ...item }));
@@ -943,6 +983,7 @@ export const useAppStore = create<AppState>()(
             payload: nextState.memorySummary,
           }).catch(() => undefined);
         }
+        return { ok: true };
       },
       undoLastPantryUpdate: () =>
         set((state) => {
@@ -959,6 +1000,7 @@ export const useAppStore = create<AppState>()(
             memorySummary: buildMemoryFromState(next),
           };
         }),
+      dismissUndoEvent: () => set({ undoEvent: undefined }),
       updateReminderPreferences: (patch) =>
         set((state) => ({
           reminderPreferences: { ...state.reminderPreferences, ...patch },

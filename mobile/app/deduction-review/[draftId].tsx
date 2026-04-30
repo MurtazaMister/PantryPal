@@ -16,6 +16,28 @@ export default function DeductionReviewScreen() {
   const [selectedPantryItemId, setSelectedPantryItemId] = useState<string | null>(null);
   const [addQty, setAddQty] = useState("1");
   const [addError, setAddError] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  function resolvePantryAvailability(pantryItemId: string | undefined, itemName: string, unit: string) {
+    return (
+      (pantryItemId ? pantryItems.find((item) => item.id === pantryItemId) : undefined) ??
+      pantryItems.find((item) => item.name.toLowerCase() === itemName.toLowerCase() && item.unit === unit)
+    );
+  }
+
+  function getRowError(itemName: string, unit: string, quantity: number, pantryItemId?: string) {
+    if (Number.isNaN(quantity) || quantity < 0) {
+      return "Quantity must be 0 or greater.";
+    }
+    const pantryItem = resolvePantryAvailability(pantryItemId, itemName, unit);
+    if (!pantryItem && quantity > 0) {
+      return "Item not found in pantry.";
+    }
+    if (pantryItem && quantity > pantryItem.quantity) {
+      return `Cannot exceed available ${trimNumber(pantryItem.quantity)} ${pantryItem.unit}.`;
+    }
+    return null;
+  }
 
   if (!draft) {
     return (
@@ -26,6 +48,11 @@ export default function DeductionReviewScreen() {
       </Screen>
     );
   }
+
+  const rowErrors = draft.deductions.map((deduction) =>
+    getRowError(deduction.pantryItemName, deduction.unit, deduction.quantity, deduction.pantryItemId),
+  );
+  const hasRowErrors = rowErrors.some(Boolean);
 
   return (
     <Screen>
@@ -38,6 +65,19 @@ export default function DeductionReviewScreen() {
             <View style={{ flex: 1 }}>
               <Text style={styles.item}>{deduction.pantryItemName}</Text>
               <Text style={styles.reason}>{deduction.reason}</Text>
+              <Text style={styles.available}>
+                {(() => {
+                  const pantryItem = resolvePantryAvailability(
+                    deduction.pantryItemId,
+                    deduction.pantryItemName,
+                    deduction.unit,
+                  );
+                  return pantryItem
+                    ? `Available: ${trimNumber(pantryItem.quantity)} ${pantryItem.unit}`
+                    : "Available: not found in pantry";
+                })()}
+              </Text>
+              {rowErrors[index] ? <Text style={styles.error}>{rowErrors[index]}</Text> : null}
             </View>
             <TextInput
               style={styles.input}
@@ -98,6 +138,10 @@ export default function DeductionReviewScreen() {
                   setAddError("Quantity must be greater than 0.");
                   return;
                 }
+                if (nextQty > pantryItem.quantity) {
+                  setAddError(`Cannot exceed available ${trimNumber(pantryItem.quantity)} ${pantryItem.unit}.`);
+                  return;
+                }
                 const next = {
                   ...draft,
                   deductions: [
@@ -132,13 +176,25 @@ export default function DeductionReviewScreen() {
           </View>
         ) : null}
       </SectionCard>
+      {submitError ? <Text style={styles.submitError}>{submitError}</Text> : null}
+      {hasRowErrors ? <Text style={styles.submitError}>Fix invalid deduction quantities before confirming.</Text> : null}
 
       <Pressable
-        style={styles.button}
-        onPress={() => {
-          applyDraft(draft.id);
+        style={[styles.button, hasRowErrors && styles.buttonDisabled]}
+        onPress={async () => {
+          if (hasRowErrors) {
+            setSubmitError("Fix invalid deduction quantities before confirming.");
+            return;
+          }
+          const result = await applyDraft(draft.id);
+          if (!result.ok) {
+            setSubmitError(result.error ?? "Unable to apply pantry update.");
+            return;
+          }
+          setSubmitError(null);
           router.replace("/(tabs)/home");
         }}
+        disabled={hasRowErrors}
       >
         <Text style={styles.buttonText}>Confirm and update pantry</Text>
       </Pressable>
@@ -174,6 +230,12 @@ const styles = StyleSheet.create({
   reason: {
     color: "#64756a",
     lineHeight: 19,
+  },
+  available: {
+    color: "#355547",
+    fontSize: 12,
+    marginTop: 2,
+    fontWeight: "600",
   },
   input: {
     width: 72,
@@ -247,5 +309,14 @@ const styles = StyleSheet.create({
   buttonText: {
     color: "#fff",
     fontWeight: "800",
+  },
+  buttonDisabled: {
+    opacity: 0.55,
+  },
+  submitError: {
+    marginTop: 8,
+    color: "#b91c1c",
+    fontSize: 12,
+    fontWeight: "600",
   },
 });
