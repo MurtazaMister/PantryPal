@@ -19,6 +19,7 @@ export const estimateExpirySchema = z.object({
 
 export const recipeQuerySchema = z.object({
   userId: z.string().default("guest_demo"),
+  mode: z.enum(["default", "prompt"]).optional(),
   pantry: z.array(pantryItemSchema),
   filters: z.object({
     maxMinutes: z.union([z.literal(15), z.literal(30), z.literal(60)]).optional(),
@@ -37,6 +38,43 @@ export const deductionEstimateSchema = z.object({
   description: z.string().optional(),
   servings: z.number().min(1),
   mealType: z.enum(["breakfast", "lunch", "dinner", "snack"]),
+});
+
+const chatMessageSchema = z.object({
+  role: z.enum(["user", "assistant"]),
+  text: z.string().min(1),
+});
+
+const recipeSnapshotSchema = z.object({
+  title: z.string().min(1),
+  cuisine: z.string().min(1),
+  cookingTimeMinutes: z.number().int().positive(),
+  equipment: z.array(z.enum(["stove", "oven", "microwave", "grill", "none"])).min(1),
+  servings: z.number().min(1),
+  ingredients: z.array(
+    z.object({
+      name: z.string().min(1),
+      normalizedName: z.string().min(1),
+      quantity: z.number().positive(),
+      unit: z.string().min(1),
+    }),
+  ),
+  steps: z.array(z.string().min(1)),
+});
+
+export const recipeChatSchema = z.object({
+  userId: z.string().default("guest_demo"),
+  pantry: z.array(pantryItemSchema),
+  recipeSnapshot: recipeSnapshotSchema,
+  chatHistory: z.array(chatMessageSchema).max(24).default([]),
+  message: z.string().min(1),
+});
+
+export const recipeFinalizeSchema = z.object({
+  userId: z.string().default("guest_demo"),
+  pantry: z.array(pantryItemSchema),
+  recipeSnapshot: recipeSnapshotSchema,
+  chatHistory: z.array(chatMessageSchema).max(40).default([]),
 });
 
 export const memoryRefreshSchema = z.object({

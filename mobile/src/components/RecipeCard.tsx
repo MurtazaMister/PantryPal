@@ -41,6 +41,14 @@ export function RecipeCard({
           {recipe.missingIngredients.map((ingredient) => quantityLabel(ingredient.quantity, ingredient.unit) + " " + ingredient.name).join(", ")}
         </Text>
       ) : null}
+      {recipe.ingredientAlternatives?.length ? (
+        <Text style={styles.alt}>
+          Alternatives:{" "}
+          {recipe.ingredientAlternatives
+            .map((entry) => `${entry.missingIngredient} -> ${entry.alternativeIngredient}`)
+            .join(", ")}
+        </Text>
+      ) : null}
     </Pressable>
   );
 }
@@ -92,6 +100,10 @@ const styles = StyleSheet.create({
   },
   missing: {
     color: "#8b5e00",
+    fontWeight: "600",
+  },
+  alt: {
+    color: "#1f5f3a",
     fontWeight: "600",
   },
 });

@@ -31,9 +31,11 @@ type CookUiFilters = {
 
 export default function CookScreen() {
   const setSelectedMealType = useAppStore((state) => state.setSelectedMealType);
-  const generateRecommendations = useAppStore((state) => state.generateRecommendations);
+  const generateRecipesFromPrompt = useAppStore((state) => state.generateRecipesFromPrompt);
   const latestRecommendations = useAppStore((state) => state.latestRecommendations);
   const memorySummary = useAppStore((state) => state.memorySummary);
+  const generatingRecipes = useAppStore((state) => state.generatingRecipes);
+  const lastGeneratedAt = useAppStore((state) => state.lastGeneratedAt);
 
   const [prompt, setPrompt] = useState("");
   const [filters, setFilters] = useState<CookUiFilters>({});
@@ -68,10 +70,10 @@ export default function CookScreen() {
     });
   }
 
-  function runGenerate() {
+  async function runGenerate() {
     const mealType = filters.mealType ?? "dinner";
     setSelectedMealType(mealType);
-    generateRecommendations(
+    await generateRecipesFromPrompt(
       {
         mealType,
         availability: filters.availability ?? "prioritize-expiring",
@@ -138,9 +140,10 @@ export default function CookScreen() {
           ))}
         </View>
 
-        <Pressable style={styles.button} onPress={runGenerate}>
-          <Text style={styles.buttonText}>Generate recipes</Text>
+        <Pressable style={styles.button} onPress={() => void runGenerate()}>
+          <Text style={styles.buttonText}>{generatingRecipes ? "Generating..." : "Generate recipes"}</Text>
         </Pressable>
+        {lastGeneratedAt ? <Text style={styles.generatedAt}>Updated: {lastGeneratedAt}</Text> : null}
 
         <Text style={styles.memoryText}>
           Memory bias: {memorySummary.topCuisines.join(", ")} - {memorySummary.preferredTimeRange} -{" "}
@@ -149,9 +152,10 @@ export default function CookScreen() {
       </SectionCard>
 
       <SectionCard title="Recommendations">
+        {prompt.trim() ? <Text style={styles.queryText}>Results for: {prompt.trim()}</Text> : null}
         {latestRecommendations.length ? (
           latestRecommendations.map((recipe) => (
-            <RecipeCard key={recipe.id} recipe={recipe} onPress={() => router.push(`/recipe/${recipe.id}`)} />
+            <RecipeCard key={recipe.id} recipe={recipe} onPress={() => router.push(`/recipe-chat/${recipe.id}`)} />
           ))
         ) : (
           <EmptyState
@@ -228,5 +232,13 @@ const styles = StyleSheet.create({
   memoryText: {
     color: "#59695e",
     lineHeight: 20,
+  },
+  generatedAt: {
+    color: "#6b7c72",
+    fontSize: 12,
+  },
+  queryText: {
+    color: "#506357",
+    fontWeight: "700",
   },
 });

@@ -44,6 +44,10 @@ export interface UserMemorySummary {
 export interface RecipeRecommendation extends Recipe {
   matchScore: number;
   missingIngredients: RecipeIngredient[];
+  ingredientAlternatives?: Array<{
+    missingIngredient: string;
+    alternativeIngredient: string;
+  }>;
   pantryCoveredIngredients: RecipeIngredient[];
   rationaleBadges: string[];
   usesExpiringItems: boolean;

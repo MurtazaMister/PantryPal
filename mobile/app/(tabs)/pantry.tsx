@@ -6,7 +6,7 @@ import { EmptyState } from "../../src/components/EmptyState";
 import { PantryItemCard } from "../../src/components/PantryItemCard";
 import { Screen } from "../../src/components/Screen";
 import { SectionCard } from "../../src/components/SectionCard";
-import { dateOnlyToIso, toIsoDateOnly } from "../../src/lib";
+import { dateOnlyToIso, dateOnlyToLocalDate, toIsoDateOnly } from "../../src/lib";
 import { useAppStore } from "../../src/store/useAppStore";
 import type { ItemSuggestion, Unit } from "../../src/types";
 
@@ -244,7 +244,7 @@ export default function PantryScreen() {
             {activeDateField ? (
               <View style={styles.pickerCard}>
                 <DateTimePicker
-                  value={new Date(activeDateField === "purchased" ? editPurchasedDate : (editExpiry || editPurchasedDate))}
+                  value={dateOnlyToLocalDate(activeDateField === "purchased" ? editPurchasedDate : (editExpiry || editPurchasedDate))}
                   mode="date"
                   display={Platform.OS === "ios" ? "spinner" : "default"}
                   textColor="#1f2937"
@@ -383,7 +383,7 @@ export default function PantryScreen() {
             {addActiveDateField ? (
               <View style={styles.pickerCard}>
                 <DateTimePicker
-                  value={new Date(addActiveDateField === "purchased" ? addBoughtDate : (addExpiryDate || addBoughtDate))}
+                  value={dateOnlyToLocalDate(addActiveDateField === "purchased" ? addBoughtDate : (addExpiryDate || addBoughtDate))}
                   mode="date"
                   display={Platform.OS === "ios" ? "spinner" : "default"}
                   textColor="#1f2937"

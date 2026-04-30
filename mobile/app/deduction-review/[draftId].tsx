@@ -1,5 +1,5 @@
 import { useLocalSearchParams, router } from "expo-router";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { Screen } from "../../src/components/Screen";
 import { SectionCard } from "../../src/components/SectionCard";
@@ -11,7 +11,11 @@ export default function DeductionReviewScreen() {
   const drafts = useAppStore((state) => state.deductionDrafts);
   const updateDraft = useAppStore((state) => state.updateDeductionDraft);
   const applyDraft = useAppStore((state) => state.applyDeductionDraft);
+  const pantryItems = useAppStore((state) => state.pantryItems);
   const draft = useMemo(() => drafts.find((entry) => entry.id === draftId), [drafts, draftId]);
+  const [selectedPantryItemId, setSelectedPantryItemId] = useState<string | null>(null);
+  const [addQty, setAddQty] = useState("1");
+  const [addError, setAddError] = useState<string | null>(null);
 
   if (!draft) {
     return (
@@ -49,8 +53,74 @@ export default function DeductionReviewScreen() {
                 updateDraft(draft.id, next);
               }}
             />
+            <Pressable
+              style={styles.removeButton}
+              onPress={() => {
+                const next = {
+                  ...draft,
+                  deductions: draft.deductions.filter((_, deductionIndex) => deductionIndex !== index),
+                };
+                updateDraft(draft.id, next);
+              }}
+            >
+              <Text style={styles.removeText}>Remove</Text>
+            </Pressable>
           </View>
         ))}
+        <View style={styles.addSection}>
+          <Text style={styles.section}>Add pantry ingredient</Text>
+          <View style={styles.pantryPicker}>
+            {pantryItems.map((item) => (
+              <Pressable
+                key={item.id}
+                style={[styles.pantryChip, selectedPantryItemId === item.id && styles.pantryChipActive]}
+                onPress={() => {
+                  setSelectedPantryItemId(item.id);
+                  setAddError(null);
+                }}
+              >
+                <Text style={[styles.pantryChipText, selectedPantryItemId === item.id && styles.pantryChipTextActive]}>{item.name}</Text>
+              </Pressable>
+            ))}
+          </View>
+          <View style={styles.addRow}>
+            <TextInput style={styles.input} value={addQty} onChangeText={setAddQty} keyboardType="decimal-pad" />
+            <Pressable
+              style={styles.addButton}
+              onPress={() => {
+                const pantryItem = pantryItems.find((item) => item.id === selectedPantryItemId);
+                if (!pantryItem) {
+                  setAddError("Select an ingredient from pantry.");
+                  return;
+                }
+                const nextQty = Number(addQty) || 0;
+                if (nextQty <= 0) {
+                  setAddError("Quantity must be greater than 0.");
+                  return;
+                }
+                const next = {
+                  ...draft,
+                  deductions: [
+                    ...draft.deductions,
+                    {
+                      pantryItemId: pantryItem.id,
+                      pantryItemName: pantryItem.name,
+                      quantity: nextQty,
+                      unit: pantryItem.unit,
+                      confidence: 0.7,
+                      reason: "Added manually from pantry.",
+                    },
+                  ],
+                };
+                updateDraft(draft.id, next);
+                setAddError(null);
+              }}
+            >
+              <Text style={styles.addButtonText}>Add</Text>
+            </Pressable>
+          </View>
+          {addError ? <Text style={styles.error}>{addError}</Text> : null}
+        </View>
         {draft.unmatchedIngredients.length ? (
           <View style={styles.unmatched}>
             <Text style={styles.section}>Unmatched ingredients</Text>
@@ -85,6 +155,17 @@ const styles = StyleSheet.create({
     gap: 10,
     alignItems: "center",
   },
+  removeButton: {
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: "#fee2e2",
+  },
+  removeText: {
+    color: "#991b1b",
+    fontWeight: "700",
+    fontSize: 12,
+  },
   item: {
     fontSize: 16,
     fontWeight: "700",
@@ -106,6 +187,51 @@ const styles = StyleSheet.create({
   unmatched: {
     marginTop: 10,
     gap: 4,
+  },
+  addSection: {
+    marginTop: 10,
+    gap: 8,
+  },
+  pantryPicker: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  pantryChip: {
+    backgroundColor: "#edf4ec",
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  pantryChipActive: {
+    backgroundColor: "#153a2a",
+  },
+  pantryChipText: {
+    color: "#234233",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  pantryChipTextActive: {
+    color: "#fff",
+  },
+  addRow: {
+    flexDirection: "row",
+    gap: 8,
+    alignItems: "center",
+  },
+  addButton: {
+    backgroundColor: "#dcfce7",
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  addButtonText: {
+    color: "#166534",
+    fontWeight: "700",
+  },
+  error: {
+    color: "#b91c1c",
+    fontSize: 12,
   },
   section: {
     fontWeight: "700",

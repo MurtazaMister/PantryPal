@@ -1,4 +1,5 @@
 import { router } from "expo-router";
+import { useEffect } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { EmptyState } from "../../src/components/EmptyState";
 import { RecipeCard } from "../../src/components/RecipeCard";
@@ -17,10 +18,14 @@ export default function HomeScreen() {
 
   const expiring = pantryItems.filter(isExpiringSoon);
   const lowStock = pantryItems.filter((item) => item.isLowStock);
-  const topRecipes =
-    latestRecommendations.length > 0
-      ? latestRecommendations
-      : generateRecommendations({ availability: "prioritize-expiring", mealType: "dinner", maxMinutes: 30 }, "");
+
+  useEffect(() => {
+    if (latestRecommendations.length === 0) {
+      generateRecommendations({ availability: "prioritize-expiring", mealType: "dinner", maxMinutes: 30 }, "");
+    }
+  }, [latestRecommendations.length, generateRecommendations]);
+
+  const topRecipes = latestRecommendations;
 
   return (
     <Screen>
@@ -54,7 +59,7 @@ export default function HomeScreen() {
       <SectionCard title="Top recipes" subtitle="Tailored using pantry coverage, expiring items, and memory from past cooking.">
         {topRecipes.length ? (
           topRecipes.map((recipe) => (
-            <RecipeCard key={recipe.id} recipe={recipe} onPress={() => router.push(`/recipe/${recipe.id}`)} />
+            <RecipeCard key={recipe.id} recipe={recipe} onPress={() => router.push(`/recipe-chat/${recipe.id}`)} />
           ))
         ) : (
           <EmptyState title="Your pantry is empty" body="Add a few groceries and PantryPal will start ranking meals you can make now." />

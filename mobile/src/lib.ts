@@ -38,6 +38,11 @@ export function dateOnlyToIso(value: string) {
   return next.toISOString();
 }
 
+export function dateOnlyToLocalDate(value: string) {
+  const [year, month, day] = value.split("-").map(Number);
+  return new Date(year, (month ?? 1) - 1, day ?? 1, 12, 0, 0, 0);
+}
+
 export function isExpiringSoon(item: PantryItem) {
   const remaining = daysUntil(item.expiryDate);
   return remaining !== null && remaining <= 3;

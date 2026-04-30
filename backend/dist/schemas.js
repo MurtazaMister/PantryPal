@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.customUnitSchema = exports.deleteSuggestionSchema = exports.itemSuggestionsQuerySchema = exports.mergeGuestSchema = exports.authGuestSchema = exports.memoryRefreshSchema = exports.deductionEstimateSchema = exports.recipeQuerySchema = exports.estimateExpirySchema = exports.pantryItemSchema = void 0;
+exports.customUnitSchema = exports.deleteSuggestionSchema = exports.itemSuggestionsQuerySchema = exports.mergeGuestSchema = exports.authGuestSchema = exports.memoryRefreshSchema = exports.recipeFinalizeSchema = exports.recipeChatSchema = exports.deductionEstimateSchema = exports.recipeQuerySchema = exports.estimateExpirySchema = exports.pantryItemSchema = void 0;
 const zod_1 = require("zod");
 exports.pantryItemSchema = zod_1.z.object({
     id: zod_1.z.string(),
@@ -19,6 +19,7 @@ exports.estimateExpirySchema = zod_1.z.object({
 });
 exports.recipeQuerySchema = zod_1.z.object({
     userId: zod_1.z.string().default("guest_demo"),
+    mode: zod_1.z.enum(["default", "prompt"]).optional(),
     pantry: zod_1.z.array(exports.pantryItemSchema),
     filters: zod_1.z.object({
         maxMinutes: zod_1.z.union([zod_1.z.literal(15), zod_1.z.literal(30), zod_1.z.literal(60)]).optional(),
@@ -36,6 +37,37 @@ exports.deductionEstimateSchema = zod_1.z.object({
     description: zod_1.z.string().optional(),
     servings: zod_1.z.number().min(1),
     mealType: zod_1.z.enum(["breakfast", "lunch", "dinner", "snack"]),
+});
+const chatMessageSchema = zod_1.z.object({
+    role: zod_1.z.enum(["user", "assistant"]),
+    text: zod_1.z.string().min(1),
+});
+const recipeSnapshotSchema = zod_1.z.object({
+    title: zod_1.z.string().min(1),
+    cuisine: zod_1.z.string().min(1),
+    cookingTimeMinutes: zod_1.z.number().int().positive(),
+    equipment: zod_1.z.array(zod_1.z.enum(["stove", "oven", "microwave", "grill", "none"])).min(1),
+    servings: zod_1.z.number().min(1),
+    ingredients: zod_1.z.array(zod_1.z.object({
+        name: zod_1.z.string().min(1),
+        normalizedName: zod_1.z.string().min(1),
+        quantity: zod_1.z.number().positive(),
+        unit: zod_1.z.string().min(1),
+    })),
+    steps: zod_1.z.array(zod_1.z.string().min(1)),
+});
+exports.recipeChatSchema = zod_1.z.object({
+    userId: zod_1.z.string().default("guest_demo"),
+    pantry: zod_1.z.array(exports.pantryItemSchema),
+    recipeSnapshot: recipeSnapshotSchema,
+    chatHistory: zod_1.z.array(chatMessageSchema).max(24).default([]),
+    message: zod_1.z.string().min(1),
+});
+exports.recipeFinalizeSchema = zod_1.z.object({
+    userId: zod_1.z.string().default("guest_demo"),
+    pantry: zod_1.z.array(exports.pantryItemSchema),
+    recipeSnapshot: recipeSnapshotSchema,
+    chatHistory: zod_1.z.array(chatMessageSchema).max(40).default([]),
 });
 exports.memoryRefreshSchema = zod_1.z.object({
     userId: zod_1.z.string(),

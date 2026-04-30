@@ -23,6 +23,7 @@ app.use((request, response, next) => {
         (typeof request.query?.userId === "string" && request.query.userId) ||
         "unknown";
     request.requestId = requestId;
+    response.setHeader("x-request-id", requestId);
     console.log(`dev:req id=${requestId} method=${request.method} path=${request.path} userId=${userId}`);
     response.on("finish", () => {
         const durationMs = Date.now() - startedAt;
@@ -287,6 +288,7 @@ app.post("/ai/recipe-query", async (request, response) => {
         filters: parsed.data.filters,
         prompt: parsed.data.prompt,
         memory,
+        mode: parsed.data.mode,
     });
     response.json({
         recipes,
@@ -301,13 +303,101 @@ app.post("/ai/deduction-estimate", (request, response) => {
         return;
     }
     console.log(`dev:ai deduction-estimate userId=${parsed.data.userId} servings=${parsed.data.servings} recipeId=${parsed.data.recipeId ?? "none"} hasDescription=${Boolean(parsed.data.description)}`);
-    response.json((0, recommend_1.buildDeductionEstimate)({
+    void (async () => {
+        const modelEstimate = await (0, openai_1.estimateDeductionWithOpenAI)({
+            apiKey: process.env.OPENAI_API_KEY,
+            model: process.env.OPENAI_MODEL ?? "gpt-4.1-mini",
+            pantry: parsed.data.pantry,
+            servings: parsed.data.servings,
+            mealType: parsed.data.mealType,
+            recipeId: parsed.data.recipeId,
+            description: parsed.data.description,
+        });
+        if (modelEstimate) {
+            console.log(`dev:ai deduction-estimate model-success userId=${parsed.data.userId}`);
+            response.json(modelEstimate);
+            return;
+        }
+        console.log(`dev:ai deduction-estimate fallback-deterministic userId=${parsed.data.userId}`);
+        response.json((0, recommend_1.buildDeductionEstimate)({
+            pantry: parsed.data.pantry,
+            servings: parsed.data.servings,
+            mealType: parsed.data.mealType,
+            recipeId: parsed.data.recipeId,
+            description: parsed.data.description,
+        }));
+    })().catch((error) => {
+        const message = error instanceof Error ? error.message : "unknown";
+        console.log(`dev:ai deduction-estimate error message=${message}`);
+        response.json((0, recommend_1.buildDeductionEstimate)({
+            pantry: parsed.data.pantry,
+            servings: parsed.data.servings,
+            mealType: parsed.data.mealType,
+            recipeId: parsed.data.recipeId,
+            description: parsed.data.description,
+        }));
+    });
+});
+app.post("/ai/recipe-chat", async (request, response) => {
+    const parsed = schemas_1.recipeChatSchema.safeParse(request.body);
+    if (!parsed.success) {
+        response.status(400).json({ error: parsed.error.flatten() });
+        return;
+    }
+    console.log(`dev:ai recipe-chat userId=${parsed.data.userId} messageLen=${parsed.data.message.length}`);
+    const ai = await (0, openai_1.recipeChatWithOpenAI)({
+        apiKey: process.env.OPENAI_API_KEY,
+        model: process.env.OPENAI_MODEL ?? "gpt-4.1-mini",
         pantry: parsed.data.pantry,
-        servings: parsed.data.servings,
-        mealType: parsed.data.mealType,
-        recipeId: parsed.data.recipeId,
-        description: parsed.data.description,
-    }));
+        recipeSnapshot: parsed.data.recipeSnapshot,
+        chatHistory: parsed.data.chatHistory,
+        message: parsed.data.message,
+    });
+    if (ai) {
+        response.json(ai);
+        return;
+    }
+    response.json({
+        assistantMessage: "I could not revise the full recipe right now. Continue with this version and adjust quantities as needed.",
+        recipeSnapshot: parsed.data.recipeSnapshot,
+    });
+});
+app.post("/ai/recipe-finalize", async (request, response) => {
+    const parsed = schemas_1.recipeFinalizeSchema.safeParse(request.body);
+    if (!parsed.success) {
+        response.status(400).json({ error: parsed.error.flatten() });
+        return;
+    }
+    console.log(`dev:ai recipe-finalize userId=${parsed.data.userId} turns=${parsed.data.chatHistory.length}`);
+    const ai = await (0, openai_1.recipeFinalizeWithOpenAI)({
+        apiKey: process.env.OPENAI_API_KEY,
+        model: process.env.OPENAI_MODEL ?? "gpt-4.1-mini",
+        pantry: parsed.data.pantry,
+        recipeSnapshot: parsed.data.recipeSnapshot,
+        chatHistory: parsed.data.chatHistory,
+    });
+    if (ai) {
+        response.json(ai);
+        return;
+    }
+    const fallbackDeductions = parsed.data.recipeSnapshot.ingredients.map((ingredient) => {
+        const pantryItem = parsed.data.pantry.find((item) => item.normalizedName === ingredient.normalizedName);
+        return {
+            pantryItemId: pantryItem?.id,
+            itemName: ingredient.name,
+            quantity: ingredient.quantity,
+            unit: ingredient.unit,
+            confidence: pantryItem ? 0.75 : 0.4,
+            reason: "Fallback estimate from latest recipe snapshot.",
+        };
+    });
+    response.json({
+        finalRecipeSnapshot: parsed.data.recipeSnapshot,
+        deductions: fallbackDeductions,
+        unmatched_ingredients: fallbackDeductions
+            .filter((entry) => !entry.pantryItemId)
+            .map((entry) => ({ name: entry.itemName, reason: "Not found in pantry." })),
+    });
 });
 app.post("/ai/estimate-expiry", async (request, response) => {
     const parsed = schemas_1.estimateExpirySchema.safeParse(request.body);

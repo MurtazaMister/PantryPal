@@ -24,14 +24,19 @@ import {
   rankRecipes,
 } from "../services/recommendations";
 import {
+  BACKEND_URL,
+  checkBackendHealth,
   deleteSuggestionHistoryItem as deleteSuggestionHistoryItemApi,
   estimateExpiry,
   fetchCustomUnits,
   fetchItemSuggestions,
+  fetchRecipeQuery,
+  finalizeRecipeChat,
   mergeGuestUser,
   refreshMemory,
   resolveGuestUser,
   saveCustomUnit,
+  sendRecipeChat,
 } from "../services/backend";
 import { signInWithGoogle } from "../services/supabase";
 import type {
@@ -41,6 +46,7 @@ import type {
   MealType,
   PantryItem,
   QueryHistoryEntry,
+  RecipeChatSession,
   RecipeInteraction,
   RecipeRecommendation,
   RecommendationFilters,
@@ -74,11 +80,16 @@ type AppState = {
   selectedMealType: MealType;
   latestRecommendations: RecipeRecommendation[];
   lastPrompt: string;
+  lastGeneratedAt?: string;
+  generatingRecipes: boolean;
   deductionDrafts: DeductionDraft[];
+  recipeChatSession?: RecipeChatSession;
   undoEvent?: UndoEvent;
   customUnits: string[];
   purchaseHistory: ItemSuggestion[];
   suggestionResults: ItemSuggestion[];
+  backendHealth: { ok: boolean; checkedAt: string; service?: string };
+  lastEstimateDebug: { source: "ai" | "heuristic" | "manual"; requestId?: string; error?: string } | null;
   completeOnboarding: (mode: "demo" | "fresh") => void;
   initializeIdentity: () => Promise<void>;
   setSelectedMealType: (mealType: MealType) => void;
@@ -105,7 +116,15 @@ type AppState = {
   deletePantryItem: (id: string) => void;
   addMissingIngredientsToShopping: (recipeId: string) => void;
   generateRecommendations: (filters: RecommendationFilters, prompt: string) => RecipeRecommendation[];
+  generateRecipesFromPrompt: (filters: RecommendationFilters, prompt: string) => Promise<RecipeRecommendation[]>;
   createRecipeDraft: (recipeId: string, servings: number, mealType: MealType) => string | undefined;
+  createDraftFromRecipeSnapshot: (input: {
+    mealName: string;
+    mealType: MealType;
+    servings: number;
+    deductions: DeductionDraft["deductions"];
+    unmatchedIngredients: DeductionDraft["unmatchedIngredients"];
+  }) => string;
   createManualDraft: (description: string, servings: number, mealType: MealType) => string;
   updateDeductionDraft: (draftId: string, next: DeductionDraft) => void;
   applyDeductionDraft: (draftId: string) => Promise<void>;
@@ -116,6 +135,10 @@ type AppState = {
   deleteSuggestionHistoryItem: (normalizedName: string) => Promise<{ ok: boolean; blocked?: boolean; reason?: string }>;
   clearSuggestions: () => void;
   upgradeWithGoogle: (mode: UpgradeMergeMode) => Promise<{ ok: boolean; message: string }>;
+  startRecipeChat: (recipeId: string) => void;
+  sendRecipeChatMessage: (message: string) => Promise<void>;
+  finalizeRecipeFromChat: () => Promise<string | undefined>;
+  endRecipeChat: () => void;
 };
 
 const defaultFilters: RecommendationFilters = {
@@ -123,12 +146,32 @@ const defaultFilters: RecommendationFilters = {
   mealType: "dinner",
 };
 
-function localFallbackExpiry(purchasedDate: string) {
+function localFallbackExpiry(itemName: string, purchasedDate: string) {
+  const name = normalizeName(itemName);
+  let days = 10;
+  if (name.includes("spinach") || name.includes("leafy")) {
+    days = 3;
+  } else if (name.includes("tomato")) {
+    days = 6;
+  } else if (name.includes("onion")) {
+    days = 14;
+  } else if (name.includes("egg")) {
+    days = 21;
+  } else if (
+    name.includes("lentil") ||
+    name.includes("rice") ||
+    name.includes("flour") ||
+    name.includes("grain")
+  ) {
+    days = 180;
+  } else if (name.includes("milk") || name.includes("yogurt")) {
+    days = 7;
+  }
   const purchased = new Date(purchasedDate);
   return new Date(
     purchased.getFullYear(),
     purchased.getMonth(),
-    purchased.getDate() + 10,
+    purchased.getDate() + days,
   ).toISOString();
 }
 
@@ -184,7 +227,10 @@ export const useAppStore = create<AppState>()(
       selectedMealType: "dinner",
       latestRecommendations: [],
       lastPrompt: "",
+      lastGeneratedAt: undefined,
+      generatingRecipes: false,
       deductionDrafts: [],
+      recipeChatSession: undefined,
       undoEvent: undefined,
       customUnits: [],
       purchaseHistory: demoPantry.map((item) => ({
@@ -193,6 +239,8 @@ export const useAppStore = create<AppState>()(
         unit: item.unit,
       })),
       suggestionResults: [],
+      backendHealth: { ok: false, checkedAt: "", service: undefined },
+      lastEstimateDebug: null,
       completeOnboarding: (mode) =>
         set((state) => {
           const pantryItems = mode === "demo" ? demoPantry : freshPantry;
@@ -231,6 +279,12 @@ export const useAppStore = create<AppState>()(
         }
 
         const custom = await fetchCustomUnits(guestUserId).catch(() => ({ units: [] as string[] }));
+        const health = await checkBackendHealth().catch(() => null);
+        if (health?.ok) {
+          console.log(`dev:client health-ok requestId=${health.requestId ?? "none"} base=${BACKEND_URL}`);
+        } else {
+          console.log(`dev:client health-fail base=${BACKEND_URL}`);
+        }
         set((state) => ({
           deviceInstallId,
           guestUserId,
@@ -239,6 +293,11 @@ export const useAppStore = create<AppState>()(
               ? { ...state.session, id: guestUserId!, name: "Guest User" }
               : state.session,
           customUnits: custom.units,
+          backendHealth: {
+            ok: Boolean(health?.ok),
+            checkedAt: todayIso(),
+            service: health?.service,
+          },
           identityReady: true,
         }));
       },
@@ -314,27 +373,13 @@ export const useAppStore = create<AppState>()(
         if (!item) {
           return;
         }
-        console.log(`dev:bought-start item=${item.name} id=${id}`);
+        console.log(`dev:bought-flow-start item=${item.name} id=${id}`);
 
         const purchasedDate = options?.purchasedDate ?? todayIso();
         const userId = state.session.id || state.guestUserId || "guest_demo";
-        let approxExpiryDate = options?.expiryDate;
-
-        if (!approxExpiryDate) {
-          const estimate = await estimateExpiry({
-            userId,
-            itemName: item.name,
-            unit: item.unit,
-            purchasedDate,
-          }).catch(() => null);
-          if (estimate?.approxExpiryDate) {
-            approxExpiryDate = estimate.approxExpiryDate;
-            console.log(`dev:bought-estimate-success item=${item.name} userId=${userId}`);
-          } else {
-            approxExpiryDate = localFallbackExpiry(purchasedDate);
-            console.log(`dev:bought-estimate-fallback item=${item.name} userId=${userId}`);
-          }
-        }
+        const approxExpiryDate = options?.expiryDate ?? localFallbackExpiry(item.name, purchasedDate);
+        const shouldEstimateAsync = !options?.expiryDate;
+        let targetPantryId: string | undefined;
 
         set((prev) => {
           const purchasedDateKey = toIsoDateOnly(purchasedDate);
@@ -353,8 +398,11 @@ export const useAppStore = create<AppState>()(
                       ? {
                           ...entry,
                           quantity: entry.quantity + item.quantity,
-                          expiryDate: approxExpiryDate ?? entry.expiryDate,
-                          approxExpiryDate: approxExpiryDate ?? entry.approxExpiryDate,
+                          expiryDate: entry.expiryDate ?? approxExpiryDate,
+                          approxExpiryDate: entry.approxExpiryDate ?? approxExpiryDate,
+                          expiryEstimatePending: shouldEstimateAsync,
+                          expiryEstimateSource: options?.expiryDate ? "manual" : "heuristic",
+                          estimateRequestId: undefined,
                         }
                       : entry,
                   ),
@@ -371,12 +419,21 @@ export const useAppStore = create<AppState>()(
                     approxExpiryDate,
                     lowStockThreshold: 1,
                     isLowStock: false,
+                    expiryEstimatePending: shouldEstimateAsync,
+                    expiryEstimateSource: options?.expiryDate ? "manual" : "heuristic",
                   },
                   ...prev.pantryItems,
                 ]);
+
+          if (existingIndex >= 0) {
+            targetPantryId = prev.pantryItems[existingIndex]?.id;
+          } else {
+            targetPantryId = pantryItems[0]?.id;
+          }
           console.log(
             `dev:bought-${existingIndex >= 0 ? "merge" : "create"} item=${item.name} purchasedDate=${purchasedDateKey}`,
           );
+          console.log(`dev:bought-local-commit item=${item.name} mode=${existingIndex >= 0 ? "merge" : "create"}`);
 
           const next = {
             ...prev,
@@ -397,25 +454,94 @@ export const useAppStore = create<AppState>()(
             memorySummary: buildMemoryFromState(next),
           };
         });
+
+        if (!shouldEstimateAsync || !targetPantryId) {
+          console.log(`dev:bought-flow-end item=${item.name} mode=local-only`);
+          set({ lastEstimateDebug: { source: options?.expiryDate ? "manual" : "heuristic" } });
+          return;
+        }
+
+        console.log(`dev:bought-estimate-request item=${item.name} pantryId=${targetPantryId}`);
+        void estimateExpiry({
+          userId,
+          itemName: item.name,
+          unit: item.unit,
+          purchasedDate,
+        })
+          .then((estimate) => {
+            if (!estimate?.approxExpiryDate) {
+              throw new Error("empty estimate result");
+            }
+            set((prev) => {
+              const exists = prev.pantryItems.some((entry) => entry.id === targetPantryId);
+              if (!exists) {
+                console.log(`dev:bought-estimate-stale item=${item.name} pantryId=${targetPantryId}`);
+                return prev;
+              }
+              return {
+                pantryItems: recalcLowStock(
+                  prev.pantryItems.map((entry) =>
+                    entry.id === targetPantryId
+                      ? {
+                          ...entry,
+                          expiryDate: estimate.approxExpiryDate,
+                          approxExpiryDate: estimate.approxExpiryDate,
+                          expiryEstimatePending: false,
+                          expiryEstimateSource: "ai",
+                          estimateRequestId: estimate.requestId,
+                        }
+                      : entry,
+                  ),
+                ),
+              } as Partial<AppState>;
+            });
+            console.log(
+              `dev:bought-estimate-reconciled item=${item.name} requestId=${estimate.requestId ?? "none"}`,
+            );
+            set({ lastEstimateDebug: { source: "ai", requestId: estimate.requestId } });
+          })
+          .catch((error) => {
+            const message = error instanceof Error ? error.message : "estimate failed";
+            set((prev) => {
+              const exists = prev.pantryItems.some((entry) => entry.id === targetPantryId);
+              if (!exists) {
+                return prev;
+              }
+              return {
+                pantryItems: recalcLowStock(
+                  prev.pantryItems.map((entry) =>
+                    entry.id === targetPantryId
+                      ? {
+                          ...entry,
+                          expiryEstimatePending: false,
+                          expiryEstimateSource: "heuristic",
+                        }
+                      : entry,
+                  ),
+                ),
+              } as Partial<AppState>;
+            });
+            console.log(`dev:bought-estimate-fallback item=${item.name} reason=${message}`);
+            set({ lastEstimateDebug: { source: "heuristic", error: message } });
+          })
+          .finally(() => {
+            console.log(`dev:bought-flow-end item=${item.name} mode=async`);
+          });
       },
       addPantryItem: async (input) => {
         const state = get();
         const purchasedDate = input.purchasedDate ?? todayIso();
         const userId = state.session.id || state.guestUserId || "guest_demo";
-        const estimate = await estimateExpiry({
-          userId,
-          itemName: input.name,
-          unit: input.unit,
-          purchasedDate,
-        }).catch(() => null);
-
-        const approxExpiryDate = input.expiryDate ?? estimate?.approxExpiryDate ?? localFallbackExpiry(purchasedDate);
+        const pantryId = createId("pantry");
+        const shouldEstimateAsync = !input.expiryDate;
+        const approxExpiryDate = input.expiryDate ?? localFallbackExpiry(input.name, purchasedDate);
+        console.log(`dev:pantry-add-flow-start item=${input.name} pantryId=${pantryId}`);
         set((prev) => {
           const next = {
             ...prev,
             pantryItems: recalcLowStock([
               {
-                id: createId("pantry"),
+                id: pantryId,
                 name: input.name,
                 normalizedName: normalizeName(input.name),
                 quantity: input.quantity,
@@ -425,6 +551,8 @@ export const useAppStore = create<AppState>()(
                 purchasedDate,
                 lowStockThreshold: 1,
                 isLowStock: false,
+                expiryEstimatePending: shouldEstimateAsync,
+                expiryEstimateSource: input.expiryDate ? "manual" : "heuristic",
               },
               ...prev.pantryItems,
             ]),
@@ -434,6 +562,81 @@ export const useAppStore = create<AppState>()(
             memorySummary: buildMemoryFromState(next),
           };
         });
+
+        console.log(`dev:pantry-add-local-commit item=${input.name} pantryId=${pantryId}`);
+
+        if (!shouldEstimateAsync) {
+          console.log(`dev:pantry-add-flow-end item=${input.name} mode=local-only`);
+          set({ lastEstimateDebug: { source: "manual" } });
+          return;
+        }
+
+        console.log(`dev:pantry-add-estimate-request item=${input.name} pantryId=${pantryId}`);
+        void estimateExpiry({
+          userId,
+          itemName: input.name,
+          unit: input.unit,
+          purchasedDate,
+        })
+          .then((estimate) => {
+            if (!estimate?.approxExpiryDate) {
+              throw new Error("empty estimate result");
+            }
+            set((prev) => {
+              const exists = prev.pantryItems.some((entry) => entry.id === pantryId);
+              if (!exists) {
+                console.log(`dev:pantry-add-estimate-stale item=${input.name} pantryId=${pantryId}`);
+                return prev;
+              }
+              return {
+                pantryItems: recalcLowStock(
+                  prev.pantryItems.map((entry) =>
+                    entry.id === pantryId
+                      ? {
+                          ...entry,
+                          expiryDate: estimate.approxExpiryDate,
+                          approxExpiryDate: estimate.approxExpiryDate,
+                          expiryEstimatePending: false,
+                          expiryEstimateSource: "ai",
+                          estimateRequestId: estimate.requestId,
+                        }
+                      : entry,
+                  ),
+                ),
+              } as Partial<AppState>;
+            });
+            console.log(
+              `dev:pantry-add-estimate-reconciled item=${input.name} requestId=${estimate.requestId ?? "none"}`,
+            );
+            set({ lastEstimateDebug: { source: "ai", requestId: estimate.requestId } });
+          })
+          .catch((error) => {
+            const message = error instanceof Error ? error.message : "estimate failed";
+            set((prev) => {
+              const exists = prev.pantryItems.some((entry) => entry.id === pantryId);
+              if (!exists) {
+                return prev;
+              }
+              return {
+                pantryItems: recalcLowStock(
+                  prev.pantryItems.map((entry) =>
+                    entry.id === pantryId
+                      ? {
+                          ...entry,
+                          expiryEstimatePending: false,
+                          expiryEstimateSource: "heuristic",
+                        }
+                      : entry,
+                  ),
+                ),
+              } as Partial<AppState>;
+            });
+            console.log(`dev:pantry-add-estimate-fallback item=${input.name} reason=${message}`);
+            set({ lastEstimateDebug: { source: "heuristic", error: message } });
+          })
+          .finally(() => {
+            console.log(`dev:pantry-add-flow-end item=${input.name} mode=async`);
+          });
       },
       updatePantryItem: async (id, patch) => {
         const state = get();
@@ -457,10 +660,15 @@ export const useAppStore = create<AppState>()(
             unit: nextUnit,
             purchasedDate: nextPurchasedDate,
           }).catch(() => null);
-          estimateDate = estimate?.approxExpiryDate ?? localFallbackExpiry(nextPurchasedDate);
+          estimateDate = estimate?.approxExpiryDate ?? localFallbackExpiry(nextName, nextPurchasedDate);
           console.log(
-            `dev:client update-pantry estimate ${estimate?.approxExpiryDate ? "success" : "fallback"} item=${nextName} userId=${userId}`,
+            `dev:client update-pantry estimate ${estimate?.approxExpiryDate ? "success" : "fallback"} item=${nextName} userId=${userId} requestId=${estimate?.requestId ?? "none"}`,
           );
+          set({
+            lastEstimateDebug: estimate?.approxExpiryDate
+              ? { source: "ai", requestId: estimate.requestId }
+              : { source: "heuristic", error: "estimate-expiry unavailable" },
+          });
         }
 
         set((prev) => {
@@ -532,9 +740,48 @@ export const useAppStore = create<AppState>()(
         set({
           latestRecommendations: recommendations,
           lastPrompt: prompt,
+          lastGeneratedAt: todayIso(),
           queryHistory: prompt ? [...state.queryHistory, queryHistoryEntry] : state.queryHistory,
         });
         return recommendations;
+      },
+      generateRecipesFromPrompt: async (filters, prompt) => {
+        const state = get();
+        const userId = state.session.id || state.guestUserId || "guest_demo";
+        set({ generatingRecipes: true, latestRecommendations: [] });
+        try {
+          const result = await fetchRecipeQuery({
+            userId,
+            mode: prompt.trim() ? "prompt" : "default",
+            pantry: state.pantryItems.map((item) => ({
+              id: item.id,
+              name: item.name,
+              normalizedName: item.normalizedName,
+              quantity: item.quantity,
+              unit: item.unit,
+              purchasedDate: item.purchasedDate,
+              expiryDate: item.expiryDate,
+            })),
+            filters,
+            prompt,
+          });
+          const mapped = (Array.isArray(result.recipes) ? (result.recipes as RecipeRecommendation[]) : []).slice(0, 3);
+          if (mapped.length) {
+            set({
+              latestRecommendations: mapped,
+              lastPrompt: prompt,
+              lastGeneratedAt: todayIso(),
+              generatingRecipes: false,
+            });
+            return mapped;
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "unknown";
+          console.log(`dev:client recipe-query fallback reason=${message}`);
+        }
+        const fallback = get().generateRecommendations(filters, prompt);
+        set({ generatingRecipes: false });
+        return fallback;
       },
       createRecipeDraft: (recipeId, servings, mealType) => {
         const state = get();
@@ -571,6 +818,22 @@ export const useAppStore = create<AppState>()(
             ...state.recipeInteractions,
           ],
         });
+        return draft.id;
+      },
+      createDraftFromRecipeSnapshot: (input) => {
+        const draft: DeductionDraft = {
+          id: createId("draft"),
+          sourceType: "recipe",
+          mealName: input.mealName,
+          mealType: input.mealType,
+          servings: input.servings,
+          deductions: input.deductions,
+          unmatchedIngredients: input.unmatchedIngredients,
+          createdAt: todayIso(),
+        };
+        set((prev) => ({
+          deductionDrafts: [draft, ...prev.deductionDrafts],
+        }));
         return draft.id;
       },
       createManualDraft: (description, servings, mealType) => {
@@ -788,6 +1051,149 @@ export const useAppStore = create<AppState>()(
         }));
         return { ok: true };
       },
+      startRecipeChat: (recipeId) => {
+        const state = get();
+        const recipe =
+          state.latestRecommendations.find((entry) => entry.id === recipeId) ??
+          state.recipes.find((entry) => entry.id === recipeId);
+        if (!recipe) {
+          return;
+        }
+        set({
+          recipeChatSession: {
+            id: createId("chat"),
+            recipeId: recipe.id,
+            recipeSnapshot: {
+              title: recipe.title,
+              cuisine: recipe.cuisine,
+              cookingTimeMinutes: recipe.cookingTimeMinutes,
+              equipment: recipe.equipment,
+              servings: recipe.servings,
+              ingredients: recipe.ingredients,
+              steps: recipe.steps,
+            },
+            messages: [],
+            loading: false,
+          },
+        });
+      },
+      sendRecipeChatMessage: async (message) => {
+        const state = get();
+        const session = state.recipeChatSession;
+        if (!session || !message.trim()) {
+          return;
+        }
+        const userId = state.session.id || state.guestUserId || "guest_demo";
+        const userMessage = { role: "user" as const, text: message.trim(), createdAt: todayIso() };
+        set({
+          recipeChatSession: {
+            ...session,
+            messages: [...session.messages, userMessage],
+            loading: true,
+          },
+        });
+        try {
+          const result = await sendRecipeChat({
+            userId,
+            pantry: state.pantryItems.map((item) => ({
+              id: item.id,
+              name: item.name,
+              normalizedName: item.normalizedName,
+              quantity: item.quantity,
+              unit: item.unit,
+            })),
+            recipeSnapshot: session.recipeSnapshot,
+            chatHistory: [...session.messages, userMessage].map((entry) => ({ role: entry.role, text: entry.text })),
+            message: userMessage.text,
+          });
+          set((prev) => {
+            const current = prev.recipeChatSession;
+            if (!current || current.id !== session.id) {
+              return prev;
+            }
+            return {
+              recipeChatSession: {
+                ...current,
+                recipeSnapshot: result.recipeSnapshot,
+                messages: [...current.messages, { role: "assistant", text: result.assistantMessage, createdAt: todayIso() }],
+                loading: false,
+              },
+            } as Partial<AppState>;
+          });
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : "Recipe chat failed";
+          set((prev) => {
+            const current = prev.recipeChatSession;
+            if (!current || current.id !== session.id) {
+              return prev;
+            }
+            return {
+              recipeChatSession: {
+                ...current,
+                messages: [...current.messages, { role: "assistant", text: `Error: ${msg}`, createdAt: todayIso() }],
+                loading: false,
+              },
+            } as Partial<AppState>;
+          });
+        }
+      },
+      finalizeRecipeFromChat: async () => {
+        const state = get();
+        const session = state.recipeChatSession;
+        if (!session) {
+          return undefined;
+        }
+        const userId = state.session.id || state.guestUserId || "guest_demo";
+        try {
+          const result = await finalizeRecipeChat({
+            userId,
+            pantry: state.pantryItems.map((item) => ({
+              id: item.id,
+              name: item.name,
+              normalizedName: item.normalizedName,
+              quantity: item.quantity,
+              unit: item.unit,
+            })),
+            recipeSnapshot: session.recipeSnapshot,
+            chatHistory: session.messages.map((entry) => ({ role: entry.role, text: entry.text })),
+          });
+          return get().createDraftFromRecipeSnapshot({
+            mealName: result.finalRecipeSnapshot.title,
+            mealType: state.selectedMealType,
+            servings: result.finalRecipeSnapshot.servings,
+            deductions: result.deductions.map((entry) => ({
+              pantryItemId: entry.pantryItemId,
+              pantryItemName: entry.itemName,
+              quantity: entry.quantity,
+              unit: entry.unit,
+              confidence: entry.confidence,
+              reason: entry.reason,
+            })),
+            unmatchedIngredients: result.unmatched_ingredients,
+          });
+        } catch {
+          return get().createDraftFromRecipeSnapshot({
+            mealName: session.recipeSnapshot.title,
+            mealType: state.selectedMealType,
+            servings: session.recipeSnapshot.servings,
+            deductions: session.recipeSnapshot.ingredients.map((ingredient) => {
+              const pantryItem = state.pantryItems.find((item) => item.normalizedName === ingredient.normalizedName);
+              return {
+                pantryItemId: pantryItem?.id,
+                pantryItemName: ingredient.name,
+                quantity: ingredient.quantity,
+                unit: ingredient.unit,
+                confidence: pantryItem ? 0.7 : 0.45,
+                reason: "Estimated from recipe chat snapshot.",
+              };
+            }),
+            unmatchedIngredients: session.recipeSnapshot.ingredients
+              .filter((ingredient) => !state.pantryItems.some((item) => item.normalizedName === ingredient.normalizedName))
+              .map((ingredient) => ({ name: ingredient.name, reason: "Not found in pantry." })),
+          });
+        }
+      },
+      endRecipeChat: () => set({ recipeChatSession: undefined }),
       upgradeWithGoogle: async (mode) => {
         const state = get();
         if (state.session.mode === "authenticated") {
@@ -853,6 +1259,8 @@ export const useAppStore = create<AppState>()(
         undoEvent: state.undoEvent,
         customUnits: state.customUnits,
         purchaseHistory: state.purchaseHistory,
+        backendHealth: state.backendHealth,
+        lastEstimateDebug: state.lastEstimateDebug,
       }),
     },
   ),

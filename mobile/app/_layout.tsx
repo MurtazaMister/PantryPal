@@ -25,6 +25,7 @@ export default function RootLayout() {
         <Stack.Screen name="onboarding" options={{ headerShown: false }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="recipe/[id]" options={{ title: "Recipe" }} />
+        <Stack.Screen name="recipe-chat/[id]" options={{ title: "Recipe Chat" }} />
         <Stack.Screen name="meal-log" options={{ title: "Log meal" }} />
         <Stack.Screen name="deduction-review/[draftId]" options={{ title: "Review deductions" }} />
       </Stack>

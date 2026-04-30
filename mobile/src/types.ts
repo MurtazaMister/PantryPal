@@ -44,6 +44,9 @@ export interface PantryItem {
   isLowStock: boolean;
   lastUsedAt?: string;
   approxExpiryDate?: string;
+  expiryEstimatePending?: boolean;
+  expiryEstimateSource?: "ai" | "heuristic" | "manual";
+  estimateRequestId?: string;
 }
 
 export interface ShoppingItem {
@@ -87,6 +90,10 @@ export interface Recipe {
 export interface RecipeRecommendation extends Recipe {
   matchScore: number;
   missingIngredients: RecipeIngredient[];
+  ingredientAlternatives?: Array<{
+    missingIngredient: string;
+    alternativeIngredient: string;
+  }>;
   pantryCoveredIngredients: RecipeIngredient[];
   rationaleBadges: string[];
   estimatedDeductions: DeductionSuggestion[];
@@ -112,6 +119,30 @@ export interface DeductionDraft {
   deductions: DeductionSuggestion[];
   unmatchedIngredients: { name: string; reason: string }[];
   createdAt: string;
+}
+
+export interface RecipeSnapshot {
+  title: string;
+  cuisine: string;
+  cookingTimeMinutes: number;
+  equipment: Equipment[];
+  servings: number;
+  ingredients: RecipeIngredient[];
+  steps: string[];
+}
+
+export interface RecipeChatMessage {
+  role: "user" | "assistant";
+  text: string;
+  createdAt: string;
+}
+
+export interface RecipeChatSession {
+  id: string;
+  recipeId: string;
+  recipeSnapshot: RecipeSnapshot;
+  messages: RecipeChatMessage[];
+  loading: boolean;
 }
 
 export interface CookingLog {
