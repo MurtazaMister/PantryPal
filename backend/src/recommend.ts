@@ -211,53 +211,201 @@ function uniqueCuisineFallbackRecipes(
     ];
   }
 
-  const variants: Recipe[] = [
-    {
-      id: `generated-${cuisine}-1`,
-      title: `${cuisineTitle} Pantry Bowl`,
-      cuisine: cuisineTitle,
-      cookingTimeMinutes: Math.min(25, defaultTime),
-      equipment: ["stove"],
-      servings: 2,
-      tags: ["quick", "ai-fallback"],
-      ingredients: baseIngredients,
-      steps: ["Prep the available pantry ingredients.", "Cook aromatics, add main ingredients, and season.", "Serve hot."],
-    },
-    {
-      id: `generated-${cuisine}-2`,
-      title: `${cuisineTitle} Weeknight Skillet`,
-      cuisine: cuisineTitle,
-      cookingTimeMinutes: Math.min(20, defaultTime),
-      equipment: ["stove"],
-      servings: 2,
-      tags: ["quick", "ai-fallback"],
-      ingredients: [
-        ...(rice ? [{ name: rice.name, normalizedName: rice.normalizedName, quantity: 1, unit: rice.unit }] : []),
-        ...(eggs ? [{ name: eggs.name, normalizedName: eggs.normalizedName, quantity: 2, unit: eggs.unit }] : []),
-        ...(tomato ? [{ name: tomato.name, normalizedName: tomato.normalizedName, quantity: 1, unit: tomato.unit }] : []),
-        ...(onion ? [{ name: onion.name, normalizedName: onion.normalizedName, quantity: 1, unit: onion.unit }] : []),
-      ],
-      steps: ["Heat pan and cook aromatics.", "Add proteins/vegetables and cook through.", "Finish with cooked base and seasonings."],
-    },
-    {
-      id: `generated-${cuisine}-3`,
-      title: `${cuisineTitle} Pantry Stir`,
-      cuisine: cuisineTitle,
-      cookingTimeMinutes: Math.min(18, defaultTime),
-      equipment: ["stove"],
-      servings: 2,
-      tags: ["quick", "ai-fallback"],
-      ingredients: [
-        ...(spinach ? [{ name: spinach.name, normalizedName: spinach.normalizedName, quantity: 0.5, unit: spinach.unit }] : []),
-        ...(onion ? [{ name: onion.name, normalizedName: onion.normalizedName, quantity: 1, unit: onion.unit }] : []),
-        ...(eggs ? [{ name: eggs.name, normalizedName: eggs.normalizedName, quantity: 2, unit: eggs.unit }] : []),
-      ],
-      steps: ["Stir-fry vegetables quickly.", "Add protein and cook until done.", "Adjust texture with pantry staples and serve."],
-    },
-  ];
+  const pantryNameIncludes = (term: string) => pantry.find((item) => item.normalizedName.includes(term));
+  const oliveOil = pantryNameIncludes("olive oil");
+  const chili = pantryNameIncludes("chili");
+  const garlic = pantryNameIncludes("garlic");
+  const soy = pantryNameIncludes("soy");
+
+  const variantsByCuisine: Record<string, Recipe[]> = {
+    italian: [
+      {
+        id: "generated-italian-1",
+        title: "Quick Tomato Egg Bruschetta-Style Skillet",
+        cuisine: "Italian",
+        cookingTimeMinutes: Math.min(14, defaultTime),
+        equipment: ["stove"],
+        servings: 2,
+        tags: ["dinner", "quick", "ai-fallback"],
+        ingredients: [
+          ...(tomato ? [{ name: tomato.name, normalizedName: tomato.normalizedName, quantity: 2, unit: tomato.unit }] : []),
+          ...(eggs ? [{ name: eggs.name, normalizedName: eggs.normalizedName, quantity: 2, unit: eggs.unit }] : []),
+          ...(onion ? [{ name: onion.name, normalizedName: onion.normalizedName, quantity: 0.5, unit: onion.unit }] : []),
+          ...(oliveOil ? [{ name: oliveOil.name, normalizedName: oliveOil.normalizedName, quantity: 1, unit: oliveOil.unit }] : []),
+        ],
+        steps: ["Saute onion in oil.", "Cook tomato into a quick sauce.", "Add eggs and finish softly scrambled."],
+      },
+      {
+        id: "generated-italian-2",
+        title: "Pantry Pomodoro Rice",
+        cuisine: "Italian",
+        cookingTimeMinutes: Math.min(15, defaultTime),
+        equipment: ["stove"],
+        servings: 2,
+        tags: ["dinner", "quick", "ai-fallback"],
+        ingredients: [
+          ...(rice ? [{ name: rice.name, normalizedName: rice.normalizedName, quantity: 1, unit: rice.unit }] : []),
+          ...(tomato ? [{ name: tomato.name, normalizedName: tomato.normalizedName, quantity: 2, unit: tomato.unit }] : []),
+          ...(onion ? [{ name: onion.name, normalizedName: onion.normalizedName, quantity: 0.5, unit: onion.unit }] : []),
+          ...(garlic ? [{ name: garlic.name, normalizedName: garlic.normalizedName, quantity: 1, unit: garlic.unit }] : []),
+        ],
+        steps: ["Saute aromatics.", "Simmer tomatoes into a sauce.", "Fold in warm rice and finish."],
+      },
+      {
+        id: "generated-italian-3",
+        title: "Spinach Frittata Cup",
+        cuisine: "Italian",
+        cookingTimeMinutes: Math.min(12, defaultTime),
+        equipment: ["stove"],
+        servings: 2,
+        tags: ["dinner", "quick", "ai-fallback"],
+        ingredients: [
+          ...(eggs ? [{ name: eggs.name, normalizedName: eggs.normalizedName, quantity: 3, unit: eggs.unit }] : []),
+          ...(spinach ? [{ name: spinach.name, normalizedName: spinach.normalizedName, quantity: 0.5, unit: spinach.unit }] : []),
+          ...(onion ? [{ name: onion.name, normalizedName: onion.normalizedName, quantity: 0.5, unit: onion.unit }] : []),
+        ],
+        steps: ["Whisk eggs.", "Cook spinach and onion briefly.", "Set eggs over low heat and fold."],
+      },
+    ],
+    mexican: [
+      {
+        id: "generated-mexican-1",
+        title: "Quick Ranchero Eggs",
+        cuisine: "Mexican",
+        cookingTimeMinutes: Math.min(12, defaultTime),
+        equipment: ["stove"],
+        servings: 2,
+        tags: ["dinner", "quick", "ai-fallback"],
+        ingredients: [
+          ...(eggs ? [{ name: eggs.name, normalizedName: eggs.normalizedName, quantity: 3, unit: eggs.unit }] : []),
+          ...(tomato ? [{ name: tomato.name, normalizedName: tomato.normalizedName, quantity: 2, unit: tomato.unit }] : []),
+          ...(onion ? [{ name: onion.name, normalizedName: onion.normalizedName, quantity: 0.5, unit: onion.unit }] : []),
+          ...(chili ? [{ name: chili.name, normalizedName: chili.normalizedName, quantity: 1, unit: chili.unit }] : []),
+        ],
+        steps: ["Cook tomato-onion salsa.", "Crack in eggs and cover until just set.", "Serve hot."],
+      },
+      {
+        id: "generated-mexican-2",
+        title: "Mexican Tomato Rice Skillet",
+        cuisine: "Mexican",
+        cookingTimeMinutes: Math.min(15, defaultTime),
+        equipment: ["stove"],
+        servings: 2,
+        tags: ["dinner", "quick", "ai-fallback"],
+        ingredients: [
+          ...(rice ? [{ name: rice.name, normalizedName: rice.normalizedName, quantity: 1, unit: rice.unit }] : []),
+          ...(tomato ? [{ name: tomato.name, normalizedName: tomato.normalizedName, quantity: 2, unit: tomato.unit }] : []),
+          ...(onion ? [{ name: onion.name, normalizedName: onion.normalizedName, quantity: 1, unit: onion.unit }] : []),
+          ...(chili ? [{ name: chili.name, normalizedName: chili.normalizedName, quantity: 1, unit: chili.unit }] : []),
+        ],
+        steps: ["Saute onion and chili.", "Cook tomatoes into a base.", "Fold in rice and finish."],
+      },
+      {
+        id: "generated-mexican-3",
+        title: "Spinach Huevos Revuelto",
+        cuisine: "Mexican",
+        cookingTimeMinutes: Math.min(10, defaultTime),
+        equipment: ["stove"],
+        servings: 2,
+        tags: ["dinner", "quick", "ai-fallback"],
+        ingredients: [
+          ...(eggs ? [{ name: eggs.name, normalizedName: eggs.normalizedName, quantity: 3, unit: eggs.unit }] : []),
+          ...(spinach ? [{ name: spinach.name, normalizedName: spinach.normalizedName, quantity: 0.5, unit: spinach.unit }] : []),
+          ...(onion ? [{ name: onion.name, normalizedName: onion.normalizedName, quantity: 0.5, unit: onion.unit }] : []),
+        ],
+        steps: ["Saute onion and spinach.", "Add eggs and scramble softly.", "Serve immediately."],
+      },
+    ],
+    japanese: [
+      {
+        id: "generated-japanese-1",
+        title: "Tamago Rice Bowl",
+        cuisine: "Japanese",
+        cookingTimeMinutes: Math.min(12, defaultTime),
+        equipment: ["stove"],
+        servings: 2,
+        tags: ["dinner", "quick", "ai-fallback"],
+        ingredients: [
+          ...(rice ? [{ name: rice.name, normalizedName: rice.normalizedName, quantity: 1, unit: rice.unit }] : []),
+          ...(eggs ? [{ name: eggs.name, normalizedName: eggs.normalizedName, quantity: 2, unit: eggs.unit }] : []),
+          ...(soy ? [{ name: soy.name, normalizedName: soy.normalizedName, quantity: 1, unit: soy.unit }] : []),
+        ],
+        steps: ["Warm rice.", "Soft-scramble eggs.", "Top rice with eggs and a light seasoning."],
+      },
+      {
+        id: "generated-japanese-2",
+        title: "Quick Tomato Tamago Stir",
+        cuisine: "Japanese",
+        cookingTimeMinutes: Math.min(14, defaultTime),
+        equipment: ["stove"],
+        servings: 2,
+        tags: ["dinner", "quick", "ai-fallback"],
+        ingredients: [
+          ...(eggs ? [{ name: eggs.name, normalizedName: eggs.normalizedName, quantity: 3, unit: eggs.unit }] : []),
+          ...(tomato ? [{ name: tomato.name, normalizedName: tomato.normalizedName, quantity: 2, unit: tomato.unit }] : []),
+          ...(onion ? [{ name: onion.name, normalizedName: onion.normalizedName, quantity: 0.5, unit: onion.unit }] : []),
+        ],
+        steps: ["Cook tomatoes and onion briefly.", "Fold in beaten eggs.", "Serve while soft."],
+      },
+      {
+        id: "generated-japanese-3",
+        title: "Spinach Egg Donburi",
+        cuisine: "Japanese",
+        cookingTimeMinutes: Math.min(15, defaultTime),
+        equipment: ["stove"],
+        servings: 2,
+        tags: ["dinner", "quick", "ai-fallback"],
+        ingredients: [
+          ...(rice ? [{ name: rice.name, normalizedName: rice.normalizedName, quantity: 1, unit: rice.unit }] : []),
+          ...(eggs ? [{ name: eggs.name, normalizedName: eggs.normalizedName, quantity: 2, unit: eggs.unit }] : []),
+          ...(spinach ? [{ name: spinach.name, normalizedName: spinach.normalizedName, quantity: 0.5, unit: spinach.unit }] : []),
+        ],
+        steps: ["Steam or warm rice.", "Cook spinach quickly.", "Add egg and spoon over rice."],
+      },
+    ],
+  };
+
+  const variants: Recipe[] =
+    variantsByCuisine[cuisine] ??
+    [
+      {
+        id: `generated-${cuisine}-1`,
+        title: `${cuisineTitle} Pantry Bowl`,
+        cuisine: cuisineTitle,
+        cookingTimeMinutes: Math.min(25, defaultTime),
+        equipment: ["stove"],
+        servings: 2,
+        tags: ["quick", "ai-fallback"],
+        ingredients: baseIngredients,
+        steps: ["Prep the available pantry ingredients.", "Cook aromatics, add main ingredients, and season.", "Serve hot."],
+      },
+      {
+        id: `generated-${cuisine}-2`,
+        title: `${cuisineTitle} Weeknight Skillet`,
+        cuisine: cuisineTitle,
+        cookingTimeMinutes: Math.min(20, defaultTime),
+        equipment: ["stove"],
+        servings: 2,
+        tags: ["quick", "ai-fallback"],
+        ingredients: baseIngredients,
+        steps: ["Heat pan and cook aromatics.", "Add proteins/vegetables and cook through.", "Finish and serve."],
+      },
+      {
+        id: `generated-${cuisine}-3`,
+        title: `${cuisineTitle} Quick Stir`,
+        cuisine: cuisineTitle,
+        cookingTimeMinutes: Math.min(18, defaultTime),
+        equipment: ["stove"],
+        servings: 2,
+        tags: ["quick", "ai-fallback"],
+        ingredients: baseIngredients,
+        steps: ["Stir-fry quickly.", "Adjust texture with pantry staples.", "Serve warm."],
+      },
+    ];
 
   return variants.map((recipe) => ({
     ...recipe,
+    tags: Array.from(new Set([mealType ?? "dinner", ...recipe.tags])),
     ingredients: recipe.ingredients.length ? recipe.ingredients : baseIngredients,
   }));
 }

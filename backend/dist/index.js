@@ -15,22 +15,6 @@ const openai_1 = require("./openai");
 const app = (0, express_1.default)();
 app.use((0, cors_1.default)());
 app.use(express_1.default.json());
-let devReqCounter = 0;
-app.use((request, response, next) => {
-    const startedAt = Date.now();
-    const requestId = `req_${++devReqCounter}`;
-    const userId = (typeof request.body?.userId === "string" && request.body.userId) ||
-        (typeof request.query?.userId === "string" && request.query.userId) ||
-        "unknown";
-    request.requestId = requestId;
-    response.setHeader("x-request-id", requestId);
-    console.log(`dev:req id=${requestId} method=${request.method} path=${request.path} userId=${userId}`);
-    response.on("finish", () => {
-        const durationMs = Date.now() - startedAt;
-        console.log(`dev:res id=${requestId} status=${response.statusCode} durationMs=${durationMs}`);
-    });
-    next();
-});
 (0, memory_1.initRedis)(process.env.REDIS_URL);
 (0, memory_1.saveUserMemory)("guest_demo", seed_1.demoMemorySummary).catch(() => undefined);
 const deviceToGuestUser = new Map();
@@ -128,7 +112,6 @@ async function loadCustomUnitsFromDb(userId) {
 app.get("/health", (_request, response) => {
     response.json({ ok: true, service: "pantrypal-backend" });
 });
-console.log("dev:server-ready");
 app.post("/auth/guest", async (request, response) => {
     const parsed = schemas_1.authGuestSchema.safeParse(request.body);
     if (!parsed.success) {
@@ -228,7 +211,6 @@ app.delete("/items/suggestions", async (request, response) => {
     const existing = userHistory.get(userId) ?? [];
     const next = existing.filter((entry) => entry.normalizedName !== normalizedName);
     userHistory.set(userId, next);
-    console.log(`dev:suggestions deleted userId=${userId} normalizedName=${normalizedName} removed=${existing.length - next.length}`);
     response.json({ ok: true, removed: existing.length - next.length });
 });
 app.post("/units/custom", async (request, response) => {
@@ -266,7 +248,6 @@ app.post("/ai/recipe-query", async (request, response) => {
         return;
     }
     const memory = (await (0, memory_1.loadUserMemory)(parsed.data.userId)) ?? seed_1.demoMemorySummary;
-    console.log(`dev:ai recipe-query userId=${parsed.data.userId} pantryCount=${parsed.data.pantry.length} promptLen=${parsed.data.prompt.length}`);
     const aiSummary = await (0, openai_1.enrichPromptWithOpenAI)({
         apiKey: process.env.OPENAI_API_KEY,
         model: process.env.OPENAI_MODEL ?? "gpt-4.1-mini",
@@ -302,7 +283,6 @@ app.post("/ai/deduction-estimate", (request, response) => {
         response.status(400).json({ error: parsed.error.flatten() });
         return;
     }
-    console.log(`dev:ai deduction-estimate userId=${parsed.data.userId} servings=${parsed.data.servings} recipeId=${parsed.data.recipeId ?? "none"} hasDescription=${Boolean(parsed.data.description)}`);
     void (async () => {
         const modelEstimate = await (0, openai_1.estimateDeductionWithOpenAI)({
             apiKey: process.env.OPENAI_API_KEY,
@@ -314,11 +294,9 @@ app.post("/ai/deduction-estimate", (request, response) => {
             description: parsed.data.description,
         });
         if (modelEstimate) {
-            console.log(`dev:ai deduction-estimate model-success userId=${parsed.data.userId}`);
             response.json(modelEstimate);
             return;
         }
-        console.log(`dev:ai deduction-estimate fallback-deterministic userId=${parsed.data.userId}`);
         response.json((0, recommend_1.buildDeductionEstimate)({
             pantry: parsed.data.pantry,
             servings: parsed.data.servings,
@@ -327,8 +305,6 @@ app.post("/ai/deduction-estimate", (request, response) => {
             description: parsed.data.description,
         }));
     })().catch((error) => {
-        const message = error instanceof Error ? error.message : "unknown";
-        console.log(`dev:ai deduction-estimate error message=${message}`);
         response.json((0, recommend_1.buildDeductionEstimate)({
             pantry: parsed.data.pantry,
             servings: parsed.data.servings,
@@ -344,7 +320,6 @@ app.post("/ai/recipe-chat", async (request, response) => {
         response.status(400).json({ error: parsed.error.flatten() });
         return;
     }
-    console.log(`dev:ai recipe-chat userId=${parsed.data.userId} messageLen=${parsed.data.message.length}`);
     const ai = await (0, openai_1.recipeChatWithOpenAI)({
         apiKey: process.env.OPENAI_API_KEY,
         model: process.env.OPENAI_MODEL ?? "gpt-4.1-mini",
@@ -368,7 +343,6 @@ app.post("/ai/recipe-finalize", async (request, response) => {
         response.status(400).json({ error: parsed.error.flatten() });
         return;
     }
-    console.log(`dev:ai recipe-finalize userId=${parsed.data.userId} turns=${parsed.data.chatHistory.length}`);
     const ai = await (0, openai_1.recipeFinalizeWithOpenAI)({
         apiKey: process.env.OPENAI_API_KEY,
         model: process.env.OPENAI_MODEL ?? "gpt-4.1-mini",
@@ -406,7 +380,6 @@ app.post("/ai/estimate-expiry", async (request, response) => {
         return;
     }
     const { itemName, unit, purchasedDate } = parsed.data;
-    console.log(`dev:ai estimate-expiry userId=${parsed.data.userId} item=${itemName} unit=${unit} purchasedDate=${purchasedDate}`);
     const modelEstimate = await (0, openai_1.estimateExpiryWithOpenAI)({
         apiKey: process.env.OPENAI_API_KEY,
         model: process.env.OPENAI_MODEL ?? "gpt-4.1-mini",
@@ -415,12 +388,6 @@ app.post("/ai/estimate-expiry", async (request, response) => {
         purchasedDate,
     });
     const shelfLifeDays = modelEstimate?.shelfLifeDays ?? heuristicShelfLifeDays(itemName);
-    if (modelEstimate) {
-        console.log(`dev:ai estimate-expiry model-success item=${itemName} shelfLifeDays=${modelEstimate.shelfLifeDays} confidence=${modelEstimate.confidence}`);
-    }
-    else {
-        console.log(`dev:ai estimate-expiry fallback-heuristic item=${itemName} shelfLifeDays=${shelfLifeDays}`);
-    }
     const confidence = modelEstimate?.confidence ?? 0.55;
     const reason = modelEstimate?.reason ?? "Estimated from common pantry shelf-life defaults.";
     const purchased = new Date(purchasedDate);
@@ -440,16 +407,7 @@ app.post("/memory/refresh", async (request, response) => {
     await (0, memory_1.saveUserMemory)(parsed.data.userId, parsed.data.payload);
     response.json({ ok: true });
 });
-app.use((error, request, response, _next) => {
-    const userId = (typeof request.body?.userId === "string" && request.body.userId) ||
-        (typeof request.query?.userId === "string" && request.query.userId) ||
-        "unknown";
-    const message = error instanceof Error ? error.message : "Unknown error";
-    const stack = error instanceof Error ? error.stack : undefined;
-    console.log(`dev:error id=${request.requestId ?? "unknown"} path=${request.path} userId=${userId} message=${message}`);
-    if (stack) {
-        console.log(`dev:error-stack ${stack}`);
-    }
+app.use((error, _request, response, _next) => {
     response.status(500).json({ error: "Internal server error" });
 });
 const port = Number(process.env.PORT ?? 4000);

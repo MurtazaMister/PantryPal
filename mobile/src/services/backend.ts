@@ -2,10 +2,6 @@ import { Alert, Platform } from "react-native";
 import Constants from "expo-constants";
 import type { ItemSuggestion, RecipeChatMessage, RecipeSnapshot, UserMemorySummary } from "../types";
 
-type RequestMeta = {
-  requestId?: string;
-};
-
 function inferPhysicalDevice() {
   const deviceName = Constants.deviceName ?? "";
   const isDevice = Constants.isDevice;
@@ -21,14 +17,14 @@ function resolveBackendUrl() {
     process.env.EXPO_PUBLIC_BACKEND_URL ??
     (Platform.OS === "android" ? "http://10.0.2.2:4000" : "http://localhost:4000");
   const tunnel = process.env.EXPO_PUBLIC_BACKEND_URL_TUNNEL;
+  const useTunnel = process.env.EXPO_PUBLIC_USE_TUNNEL === "true";
   const isPhysicalDevice = inferPhysicalDevice();
-  const base = tunnel && tunnel.trim().length > 0 ? tunnel : local;
+  const base = useTunnel && tunnel && tunnel.trim().length > 0 ? tunnel : local;
 
   if (__DEV__ && isPhysicalDevice && isLocalhostUrl(base)) {
-    console.log(`dev:client-backend-misconfig baseUrl=${base}`);
     Alert.alert(
       "Backend URL mismatch",
-      "Physical device is using localhost backend URL. Set EXPO_PUBLIC_BACKEND_URL_TUNNEL and restart Expo.",
+      "Physical device is using localhost backend URL. Enable EXPO_PUBLIC_USE_TUNNEL=true and set EXPO_PUBLIC_BACKEND_URL_TUNNEL, then restart Expo.",
     );
   }
 
@@ -37,9 +33,7 @@ function resolveBackendUrl() {
 
 export const BACKEND_URL = resolveBackendUrl();
 
-async function request<T>(path: string, options?: RequestInit): Promise<T & RequestMeta> {
-  const startedAt = Date.now();
-  console.log(`dev:client fetch-start method=${options?.method ?? "GET"} path=${path} base=${BACKEND_URL}`);
+async function request<T>(path: string, options?: RequestInit): Promise<T> {
   let response: Response;
   try {
     response = await fetch(`${BACKEND_URL}${path}`, {
@@ -50,22 +44,14 @@ async function request<T>(path: string, options?: RequestInit): Promise<T & Requ
       ...options,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "unknown fetch error";
-    console.log(`dev:client fetch-fail path=${path} error=${message}`);
     throw error;
   }
-
-  const requestId = response.headers.get("x-request-id") ?? undefined;
-  console.log(
-    `dev:client fetch-${response.ok ? "ok" : "fail"} method=${options?.method ?? "GET"} path=${path} status=${response.status} requestId=${requestId ?? "none"} durationMs=${Date.now() - startedAt}`,
-  );
 
   if (!response.ok) {
     const message = await response.text();
     throw new Error(message || `Request failed: ${response.status}`);
   }
-  const payload = (await response.json()) as T;
-  return { ...payload, requestId } as T & RequestMeta;
+  return (await response.json()) as T;
 }
 
 export async function checkBackendHealth() {

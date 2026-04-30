@@ -24,8 +24,6 @@ import {
   rankRecipes,
 } from "../services/recommendations";
 import {
-  BACKEND_URL,
-  checkBackendHealth,
   deleteSuggestionHistoryItem as deleteSuggestionHistoryItemApi,
   estimateExpiry,
   fetchCustomUnits,
@@ -89,8 +87,6 @@ type AppState = {
   customUnits: string[];
   purchaseHistory: ItemSuggestion[];
   suggestionResults: ItemSuggestion[];
-  backendHealth: { ok: boolean; checkedAt: string; service?: string };
-  lastEstimateDebug: { source: "ai" | "heuristic" | "manual"; requestId?: string; error?: string } | null;
   completeOnboarding: (mode: "demo" | "fresh") => void;
   initializeIdentity: () => Promise<void>;
   setSelectedMealType: (mealType: MealType) => void;
@@ -242,8 +238,6 @@ export const useAppStore = create<AppState>()(
         unit: item.unit,
       })),
       suggestionResults: [],
-      backendHealth: { ok: false, checkedAt: "", service: undefined },
-      lastEstimateDebug: null,
       completeOnboarding: (mode) =>
         set((state) => {
           const pantryItems = mode === "demo" ? demoPantry : freshPantry;
@@ -282,12 +276,6 @@ export const useAppStore = create<AppState>()(
         }
 
         const custom = await fetchCustomUnits(guestUserId).catch(() => ({ units: [] as string[] }));
-        const health = await checkBackendHealth().catch(() => null);
-        if (health?.ok) {
-          console.log(`dev:client health-ok requestId=${health.requestId ?? "none"} base=${BACKEND_URL}`);
-        } else {
-          console.log(`dev:client health-fail base=${BACKEND_URL}`);
-        }
         set((state) => ({
           deviceInstallId,
           guestUserId,
@@ -296,11 +284,6 @@ export const useAppStore = create<AppState>()(
               ? { ...state.session, id: guestUserId!, name: "Guest User" }
               : state.session,
           customUnits: custom.units,
-          backendHealth: {
-            ok: Boolean(health?.ok),
-            checkedAt: todayIso(),
-            service: health?.service,
-          },
           identityReady: true,
         }));
       },
@@ -376,7 +359,6 @@ export const useAppStore = create<AppState>()(
         if (!item) {
           return;
         }
-        console.log(`dev:bought-flow-start item=${item.name} id=${id}`);
 
         const purchasedDate = options?.purchasedDate ?? todayIso();
         const userId = state.session.id || state.guestUserId || "guest_demo";
@@ -433,11 +415,6 @@ export const useAppStore = create<AppState>()(
           } else {
             targetPantryId = pantryItems[0]?.id;
           }
-          console.log(
-            `dev:bought-${existingIndex >= 0 ? "merge" : "create"} item=${item.name} purchasedDate=${purchasedDateKey}`,
-          );
-          console.log(`dev:bought-local-commit item=${item.name} mode=${existingIndex >= 0 ? "merge" : "create"}`);
-
           const next = {
             ...prev,
             pantryItems,
@@ -459,12 +436,9 @@ export const useAppStore = create<AppState>()(
         });
 
         if (!shouldEstimateAsync || !targetPantryId) {
-          console.log(`dev:bought-flow-end item=${item.name} mode=local-only`);
-          set({ lastEstimateDebug: { source: options?.expiryDate ? "manual" : "heuristic" } });
           return;
         }
 
-        console.log(`dev:bought-estimate-request item=${item.name} pantryId=${targetPantryId}`);
         void estimateExpiry({
           userId,
           itemName: item.name,
@@ -478,7 +452,6 @@ export const useAppStore = create<AppState>()(
             set((prev) => {
               const exists = prev.pantryItems.some((entry) => entry.id === targetPantryId);
               if (!exists) {
-                console.log(`dev:bought-estimate-stale item=${item.name} pantryId=${targetPantryId}`);
                 return prev;
               }
               return {
@@ -491,17 +464,12 @@ export const useAppStore = create<AppState>()(
                           approxExpiryDate: estimate.approxExpiryDate,
                           expiryEstimatePending: false,
                           expiryEstimateSource: "ai",
-                          estimateRequestId: estimate.requestId,
                         }
                       : entry,
                   ),
                 ),
               } as Partial<AppState>;
             });
-            console.log(
-              `dev:bought-estimate-reconciled item=${item.name} requestId=${estimate.requestId ?? "none"}`,
-            );
-            set({ lastEstimateDebug: { source: "ai", requestId: estimate.requestId } });
           })
           .catch((error) => {
             const message = error instanceof Error ? error.message : "estimate failed";
@@ -524,11 +492,7 @@ export const useAppStore = create<AppState>()(
                 ),
               } as Partial<AppState>;
             });
-            console.log(`dev:bought-estimate-fallback item=${item.name} reason=${message}`);
-            set({ lastEstimateDebug: { source: "heuristic", error: message } });
-          })
-          .finally(() => {
-            console.log(`dev:bought-flow-end item=${item.name} mode=async`);
+            void message;
           });
       },
       addPantryItem: async (input) => {
@@ -538,7 +502,6 @@ export const useAppStore = create<AppState>()(
         const pantryId = createId("pantry");
         const shouldEstimateAsync = !input.expiryDate;
         const approxExpiryDate = input.expiryDate ?? localFallbackExpiry(input.name, purchasedDate);
-        console.log(`dev:pantry-add-flow-start item=${input.name} pantryId=${pantryId}`);
         set((prev) => {
           const next = {
             ...prev,
@@ -566,15 +529,10 @@ export const useAppStore = create<AppState>()(
           };
         });
 
-        console.log(`dev:pantry-add-local-commit item=${input.name} pantryId=${pantryId}`);
-
         if (!shouldEstimateAsync) {
-          console.log(`dev:pantry-add-flow-end item=${input.name} mode=local-only`);
-          set({ lastEstimateDebug: { source: "manual" } });
           return;
         }
 
-        console.log(`dev:pantry-add-estimate-request item=${input.name} pantryId=${pantryId}`);
         void estimateExpiry({
           userId,
           itemName: input.name,
@@ -588,7 +546,6 @@ export const useAppStore = create<AppState>()(
             set((prev) => {
               const exists = prev.pantryItems.some((entry) => entry.id === pantryId);
               if (!exists) {
-                console.log(`dev:pantry-add-estimate-stale item=${input.name} pantryId=${pantryId}`);
                 return prev;
               }
               return {
@@ -601,17 +558,12 @@ export const useAppStore = create<AppState>()(
                           approxExpiryDate: estimate.approxExpiryDate,
                           expiryEstimatePending: false,
                           expiryEstimateSource: "ai",
-                          estimateRequestId: estimate.requestId,
                         }
                       : entry,
                   ),
                 ),
               } as Partial<AppState>;
             });
-            console.log(
-              `dev:pantry-add-estimate-reconciled item=${input.name} requestId=${estimate.requestId ?? "none"}`,
-            );
-            set({ lastEstimateDebug: { source: "ai", requestId: estimate.requestId } });
           })
           .catch((error) => {
             const message = error instanceof Error ? error.message : "estimate failed";
@@ -634,11 +586,7 @@ export const useAppStore = create<AppState>()(
                 ),
               } as Partial<AppState>;
             });
-            console.log(`dev:pantry-add-estimate-fallback item=${input.name} reason=${message}`);
-            set({ lastEstimateDebug: { source: "heuristic", error: message } });
-          })
-          .finally(() => {
-            console.log(`dev:pantry-add-flow-end item=${input.name} mode=async`);
+            void message;
           });
       },
       updatePantryItem: async (id, patch) => {
@@ -664,14 +612,6 @@ export const useAppStore = create<AppState>()(
             purchasedDate: nextPurchasedDate,
           }).catch(() => null);
           estimateDate = estimate?.approxExpiryDate ?? localFallbackExpiry(nextName, nextPurchasedDate);
-          console.log(
-            `dev:client update-pantry estimate ${estimate?.approxExpiryDate ? "success" : "fallback"} item=${nextName} userId=${userId} requestId=${estimate?.requestId ?? "none"}`,
-          );
-          set({
-            lastEstimateDebug: estimate?.approxExpiryDate
-              ? { source: "ai", requestId: estimate.requestId }
-              : { source: "heuristic", error: "estimate-expiry unavailable" },
-          });
         }
 
         set((prev) => {
@@ -784,10 +724,7 @@ export const useAppStore = create<AppState>()(
             });
             return mapped;
           }
-        } catch (error) {
-          const message = error instanceof Error ? error.message : "unknown";
-          console.log(`dev:client recipe-query fallback reason=${message}`);
-        }
+        } catch {}
         if (prompt.trim()) {
           set({
             latestRecommendations: [],
@@ -1301,8 +1238,6 @@ export const useAppStore = create<AppState>()(
         undoEvent: state.undoEvent,
         customUnits: state.customUnits,
         purchaseHistory: state.purchaseHistory,
-        backendHealth: state.backendHealth,
-        lastEstimateDebug: state.lastEstimateDebug,
       }),
     },
   ),

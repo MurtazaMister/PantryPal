@@ -2,7 +2,6 @@ import { useState } from "react";
 import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import { Screen } from "../../src/components/Screen";
 import { SectionCard } from "../../src/components/SectionCard";
-import { BACKEND_URL } from "../../src/services/backend";
 import { scheduleMealReminders } from "../../src/services/reminders";
 import { useAppStore } from "../../src/store/useAppStore";
 
@@ -12,8 +11,6 @@ export default function ProfileScreen() {
   const updateReminderPreferences = useAppStore((state) => state.updateReminderPreferences);
   const memorySummary = useAppStore((state) => state.memorySummary);
   const upgradeWithGoogle = useAppStore((state) => state.upgradeWithGoogle);
-  const backendHealth = useAppStore((state) => state.backendHealth);
-  const lastEstimateDebug = useAppStore((state) => state.lastEstimateDebug);
 
   const [status, setStatus] = useState("Local reminders are not scheduled yet.");
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
@@ -92,17 +89,6 @@ export default function ProfileScreen() {
         <Text style={styles.body}>Preferred ingredients: {memorySummary.preferredIngredients.join(", ")}</Text>
         <Text style={styles.body}>Recent cooked: {memorySummary.recentCookedRecipes.join(", ")}</Text>
         <Text style={styles.body}>Time preference: {memorySummary.preferredTimeRange}</Text>
-      </SectionCard>
-
-      <SectionCard title="Debug (temporary)">
-        <Text style={styles.body}>Backend URL: {BACKEND_URL}</Text>
-        <Text style={styles.body}>
-          Health: {backendHealth.ok ? "connected" : "disconnected"}
-          {backendHealth.checkedAt ? ` at ${backendHealth.checkedAt}` : ""}
-        </Text>
-        <Text style={styles.body}>Estimate source: {lastEstimateDebug?.source ?? "none"}</Text>
-        <Text style={styles.body}>Request id: {lastEstimateDebug?.requestId ?? "n/a"}</Text>
-        <Text style={styles.body}>Last estimate error: {lastEstimateDebug?.error ?? "none"}</Text>
       </SectionCard>
 
       <Modal animationType="fade" visible={showUpgradeModal} transparent onRequestClose={() => setShowUpgradeModal(false)}>

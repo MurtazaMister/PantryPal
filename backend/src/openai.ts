@@ -73,7 +73,6 @@ async function callStrictJson<T>(params: {
   });
 
   if (!response.ok) {
-    console.log(`dev:ai ${params.routeTag} openai-http-fail status=${response.status}`);
     return null;
   }
 
@@ -84,7 +83,6 @@ async function callStrictJson<T>(params: {
     data.output?.flatMap((block) => block.content ?? []).find((entry) => typeof entry.text === "string")?.text;
 
   if (!raw) {
-    console.log(`dev:ai ${params.routeTag} empty-structured-output`);
     return null;
   }
 
@@ -92,22 +90,15 @@ async function callStrictJson<T>(params: {
   if (typeof raw === "string") {
     try {
       candidate = JSON.parse(raw);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "json-parse-fail";
-      console.log(`dev:ai ${params.routeTag} schema-fail reason=${message}`);
+    } catch {
       return null;
     }
   }
 
   const parsed = params.validator.safeParse(candidate);
   if (!parsed.success) {
-    console.log(
-      `dev:ai ${params.routeTag} schema-fail issue=${parsed.error.issues[0]?.path.join(".") ?? "unknown"}`,
-    );
     return null;
   }
-
-  console.log(`dev:ai ${params.routeTag} schema-pass`);
   return parsed.data;
 }
 
