@@ -1,6 +1,6 @@
 # PantryPal
 
-**Demo Video:** `https://youtu.be/aCigceUEehA`
+**Demo Video:** [https://youtu.be/aCigceUEehA](https://youtu.be/aCigceUEehA)
 
 PantryPal is a mobile app built to reduce food waste and daily meal decision fatigue by turning your groceries into a live pantry that stays accurate over time. Instead of making users manually track inventory after every meal, PantryPal connects shopping, pantry, recipe generation, and cooking logs into one practical loop: items you buy move into pantry, recipes are suggested from what you actually have, and after you cook, AI prepares an editable deduction draft so pantry quantities can be updated in seconds. The result is a kitchen assistant that is useful in real life, not just a recipe browser.
 
@@ -172,7 +172,7 @@ EAS will output a build URL. Download the `.apk` artifact from that link.
 
 ## Links for judges (copy-paste block)
 
-- Demo video: `https://youtu.be/aCigceUEehA`
+- Demo video: [https://youtu.be/aCigceUEehA](https://youtu.be/aCigceUEehA)
 - Repository: `<PASTE_GITHUB_REPO_LINK_HERE>`
 - Backend health: `https://pantrypal-jfku.onrender.com/health`
 - Android APK (GitHub Release asset): `<PASTE_APK_LINK_HERE>`
