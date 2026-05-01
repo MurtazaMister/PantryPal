@@ -105,75 +105,20 @@ npm install
 npx expo start --clear
 ```
 
-## Run on real phones
+## Run on real phones (Expo Go only)
 
-### Android users (APK install)
+### Android and iPhone users
 
-1. Download the latest APK from GitHub Releases (see Links section below).
-2. Transfer APK to Android phone.
-3. Enable install from unknown apps for your browser/files app.
-4. Install APK and open PantryPal.
-5. Ensure backend is reachable from device network.
-
-### iPhone users (Expo Go path)
-
-1. Install **Expo Go** from App Store.
+1. Install **Expo Go**:
+   - Android: Google Play Store
+   - iPhone: App Store
 2. Clone this repo on your development machine.
 3. Configure `mobile/.env` with hosted backend + Supabase values.
-4. Run:
+4. Start the mobile app:
    ```bash
    cd mobile
    npm install
    npx expo start --clear
    ```
-5. Scan the QR code from Expo CLI using Expo Go.
-6. App opens on iPhone and uses your configured backend.
-
-## Build Android APK (exact commands)
-
-Run these commands from `mobile`:
-
-```bash
-npm install
-npx eas login
-npx eas build:configure
-```
-
-If `mobile/eas.json` does not exist, create it with:
-
-```json
-{
-  "cli": { "version": ">= 10.0.0" },
-  "build": {
-    "preview": {
-      "distribution": "internal",
-      "android": { "buildType": "apk" }
-    }
-  }
-}
-```
-
-Then build APK:
-
-```bash
-npx eas build -p android --profile preview --clear-cache
-```
-
-EAS will output a build URL. Download the `.apk` artifact from that link.
-
-## Upload APK to GitHub for distribution
-
-1. Go to your GitHub repo -> **Releases** -> **Draft a new release**.
-2. Tag version (example: `v1.0.0`).
-3. Title (example: `PantryPal v1.0.0`).
-4. Drag/drop the built `.apk` into release assets.
-5. Publish release.
-6. Copy the public asset URL and share it for judging/install.
-
-## Links for judges (copy-paste block)
-
-- Demo video: [https://youtu.be/aCigceUEehA](https://youtu.be/aCigceUEehA)
-- Repository: `<PASTE_GITHUB_REPO_LINK_HERE>`
-- Backend health: `https://pantrypal-jfku.onrender.com/health`
-- Android APK (GitHub Release asset): `<PASTE_APK_LINK_HERE>`
-- iPhone run path: Expo Go instructions in this README
+5. Open Expo Go on your phone and scan the QR code from Expo CLI.
+6. PantryPal opens on your device using your configured backend.
